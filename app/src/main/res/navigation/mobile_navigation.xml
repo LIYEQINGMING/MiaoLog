@@ -1,0 +1,493 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/mobile_navigation"
+    app:startDestination="@+id/navigation_home">
+    
+    <!-- Material 3 默认转场动画配置 -->
+    <action
+        android:id="@+id/action_global_with_animation"
+        app:enterAnim="@anim/fragment_slide_in_right"
+        app:exitAnim="@anim/fragment_slide_out_left"
+        app:popEnterAnim="@anim/fragment_slide_in_left"
+        app:popExitAnim="@anim/fragment_slide_out_right" />
+
+    <fragment
+        android:id="@+id/navigation_home"
+        android:name="com.example.itemmanagement.ui.home.HomeFragment"
+        android:label="主页">
+        <action
+            android:id="@+id/action_navigation_home_to_addItemFragment"
+            app:destination="@id/addItemFragment"
+            app:enterAnim="@anim/fragment_slide_in_right"
+            app:exitAnim="@anim/fragment_slide_out_left"
+            app:popEnterAnim="@anim/fragment_slide_in_left"
+            app:popExitAnim="@anim/fragment_slide_out_right" />
+
+        <action
+            android:id="@+id/action_navigation_home_to_itemListFragment"
+            app:destination="@id/navigation_item_list" />
+        <action
+            android:id="@+id/action_navigation_home_to_shopping_list"
+            app:destination="@id/navigation_shopping_list" />
+        <action
+            android:id="@+id/action_home_to_template_management"
+            app:destination="@id/navigation_template_management" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_warehouse"
+        android:name="com.example.itemmanagement.ui.search.SearchFragment"
+        android:label="检索">
+        <action
+            android:id="@+id/action_navigation_warehouse_to_navigation_item_detail"
+            app:destination="@id/navigation_item_detail"
+            app:enterAnim="@anim/material3_container_transform_enter"
+            app:exitAnim="@anim/material3_container_transform_exit"
+            app:popEnterAnim="@anim/material3_container_transform_exit"
+            app:popExitAnim="@anim/material3_container_transform_enter" />
+        <action
+            android:id="@+id/action_navigation_warehouse_to_editItemFragment"
+            app:destination="@id/editItemFragment"
+            app:enterAnim="@anim/material3_container_transform_enter"
+            app:exitAnim="@anim/material3_container_transform_exit"
+            app:popEnterAnim="@anim/material3_container_transform_exit"
+            app:popExitAnim="@anim/material3_container_transform_enter" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_function"
+        android:name="com.example.itemmanagement.ui.function.FunctionFragment"
+        android:label="功能">
+        <action
+            android:id="@+id/action_function_to_inventory_analysis"
+            app:destination="@id/navigation_inventory_analysis"
+            app:enterAnim="@anim/fade_in_material"
+            app:exitAnim="@anim/fade_out_material"
+            app:popEnterAnim="@anim/fade_in_material"
+            app:popExitAnim="@anim/fade_out_material" />
+        <action
+            android:id="@+id/action_function_to_item_calendar"
+            app:destination="@id/navigation_item_calendar"
+            app:enterAnim="@anim/fade_in_material"
+            app:exitAnim="@anim/fade_out_material"
+            app:popEnterAnim="@anim/fade_in_material"
+            app:popExitAnim="@anim/fade_out_material" />
+
+        <action
+            android:id="@+id/action_function_to_waste_report"
+            app:destination="@id/navigation_waste_report" />
+        <action
+            android:id="@+id/action_function_to_warranty_list"
+            app:destination="@id/navigation_warranty_list" />
+        <action
+            android:id="@+id/action_function_to_borrow_list"
+            app:destination="@id/navigation_borrow_list" />
+        <action
+            android:id="@+id/action_function_to_data_export"
+            app:destination="@id/navigation_data_export" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_profile"
+        android:name="com.example.itemmanagement.ui.profile.ProfileFragment"
+        android:label="我的">
+        <action
+            android:id="@+id/action_profile_to_app_settings"
+            app:destination="@id/navigation_app_settings" />
+        <action
+            android:id="@+id/action_profile_to_edit_profile"
+            app:destination="@id/navigation_edit_profile" />
+        <action
+            android:id="@+id/action_profile_to_recycle_bin"
+            app:destination="@id/navigation_recycle_bin" />
+        <action
+            android:id="@+id/action_profile_to_data_export"
+            app:destination="@id/navigation_data_export" />
+        <action
+            android:id="@+id/action_profile_to_donation"
+            app:destination="@id/navigation_donation" />
+        <action
+            android:id="@+id/action_profile_to_about_app"
+            app:destination="@id/navigation_about_app" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_inventory_analysis"
+        android:name="com.example.itemmanagement.ui.analysis.InventoryAnalysisFragment"
+        android:label="万物分析" />
+
+    <fragment
+        android:id="@+id/navigation_item_calendar"
+        android:name="com.example.itemmanagement.ui.calendar.ItemCalendarFragment"
+        android:label="事件日历">
+        <action
+            android:id="@+id/action_item_calendar_to_item_detail"
+            app:destination="@id/navigation_item_detail"
+            app:enterAnim="@anim/material3_container_transform_enter"
+            app:exitAnim="@anim/material3_container_transform_exit"
+            app:popEnterAnim="@anim/material3_container_transform_enter"
+            app:popExitAnim="@anim/material3_container_transform_exit" />
+        <action
+            android:id="@+id/action_item_calendar_to_reminder_settings"
+            app:destination="@id/navigation_reminder_settings" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_shopping_list"
+        android:name="com.example.itemmanagement.ui.shopping.ShoppingListFragment"
+        android:label="购物清单">
+        <argument
+            android:name="listId"
+            app:argType="long"
+            android:defaultValue="1L" />
+        <argument
+            android:name="listName"
+            app:argType="string"
+            android:defaultValue="购物清单" />
+        <action
+            android:id="@+id/action_shopping_list_to_transfer_fullscreen"
+            app:destination="@id/navigation_transfer_to_inventory_fullscreen" />
+        <action
+            android:id="@+id/action_shopping_list_to_add_shopping_item"
+            app:destination="@id/navigation_add_shopping_item" />
+        <action
+            android:id="@+id/action_shopping_list_to_shopping_item_detail"
+            app:destination="@id/navigation_shopping_item_detail" />
+        <action
+            android:id="@+id/action_shopping_list_to_add_item"
+            app:destination="@id/addItemFragment"
+            app:enterAnim="@anim/fragment_slide_in_right"
+            app:exitAnim="@anim/fragment_slide_out_left"
+            app:popEnterAnim="@anim/fragment_slide_in_left"
+            app:popExitAnim="@anim/fragment_slide_out_right" />
+    </fragment>
+
+    <!-- 购物物品详情页 -->
+    <fragment
+        android:id="@+id/navigation_shopping_item_detail"
+        android:name="com.example.itemmanagement.ui.shopping.ShoppingItemDetailFragment"
+        android:label="物品详情">
+        <argument
+            android:name="itemId"
+            app:argType="long"
+            android:defaultValue="0L" />
+        <argument
+            android:name="listId"
+            app:argType="long"
+            android:defaultValue="0L" />
+        <argument
+            android:name="listName"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <action
+            android:id="@+id/action_shopping_item_detail_to_edit_shopping_item"
+            app:destination="@id/navigation_edit_shopping_item" />
+    </fragment>
+    
+    <!-- 编辑购物物品Fragment -->
+    <fragment
+        android:id="@+id/navigation_edit_shopping_item"
+        android:name="com.example.itemmanagement.ui.shopping.EditShoppingItemFragment"
+        android:label="编辑购物物品">
+        <argument
+            android:name="itemId"
+            app:argType="long"
+            android:defaultValue="0L" />
+        <argument
+            android:name="listId"
+            app:argType="long"
+            android:defaultValue="0L" />
+        <argument
+            android:name="listName"
+            app:argType="string"
+            android:defaultValue="购物清单" />
+    </fragment>
+
+    <!-- 购物清单管理页面 -->
+    <fragment
+        android:id="@+id/navigation_shopping_list_management"
+        android:name="com.example.itemmanagement.ui.shopping.ShoppingListManagementM3Fragment"
+        android:label="购物清单管理">
+        <action
+            android:id="@+id/action_navigation_shopping_list_management_to_navigation_shopping_list"
+            app:destination="@id/navigation_shopping_list" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_waste_report"
+        android:name="com.example.itemmanagement.ui.waste.WasteReportFragment"
+        android:label="浪费报告">
+        <action
+            android:id="@+id/action_waste_report_to_item_detail"
+            app:destination="@id/navigation_item_detail"
+            app:enterAnim="@anim/material3_container_transform_enter"
+            app:exitAnim="@anim/material3_container_transform_exit"
+            app:popEnterAnim="@anim/material3_container_transform_enter"
+            app:popExitAnim="@anim/material3_container_transform_exit" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_item_list"
+        android:name="com.example.itemmanagement.ui.home.ItemListFragment"
+        android:label="物品列表">
+        <argument
+            android:name="listType"
+            app:argType="string"
+            android:defaultValue="all" />
+        <argument
+            android:name="title"
+            app:argType="string"
+            android:defaultValue="物品列表" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/nav_category"
+        android:name="com.example.itemmanagement.ui.category.CategoryFragment"
+        android:label="分类管理" />
+
+    <fragment
+        android:id="@+id/nav_settings"
+        android:name="com.example.itemmanagement.ui.setting.SettingFragment"
+        android:label="设置" />
+
+    <fragment
+        android:id="@+id/navigation_reminder_settings"
+        android:name="com.example.itemmanagement.ui.reminder.ReminderSettingsFragment"
+        android:label="提醒设置" />
+
+    <!-- 保修管理相关页面 -->
+    <fragment
+        android:id="@+id/navigation_warranty_list"
+        android:name="com.example.itemmanagement.ui.warranty.WarrantyListFragment"
+        android:label="保修管理">
+        <action
+            android:id="@+id/action_warranty_list_to_add_edit_warranty"
+            app:destination="@id/navigation_add_edit_warranty" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_add_edit_warranty"
+        android:name="com.example.itemmanagement.ui.warranty.AddEditWarrantyFragment"
+        android:label="保修信息">
+        <argument
+            android:name="warrantyId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+        <argument
+            android:name="preSelectedItemId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <!-- 借还管理相关页面 -->
+    <fragment
+        android:id="@+id/navigation_borrow_list"
+        android:name="com.example.itemmanagement.ui.borrow.BorrowListFragment"
+        android:label="借还管理">
+        <action
+            android:id="@+id/action_borrow_list_to_add_borrow"
+            app:destination="@id/navigation_add_borrow" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_add_borrow"
+        android:name="com.example.itemmanagement.ui.borrow.AddBorrowFragment"
+        android:label="添加借出记录">
+        <argument
+            android:name="preSelectedItemId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+        <argument
+            android:name="borrowId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/addItemFragment"
+        android:name="com.example.itemmanagement.ui.add.AddItemFragment"
+        android:label="">
+        <argument
+            android:name="item"
+            app:argType="com.example.itemmanagement.data.model.Item"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="mode"
+            app:argType="string"
+            android:defaultValue="add" />
+        <argument
+            android:name="itemId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+        <argument
+            android:name="sourceType"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="sourceItemId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+    
+    <!-- 编辑Fragment -->
+    <fragment
+        android:id="@+id/editItemFragment"
+        android:name="com.example.itemmanagement.ui.edit.EditItemFragment"
+        android:label="@string/title_edit_item">
+        <argument
+            android:name="itemId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+    
+    <fragment
+        android:id="@+id/navigation_item_detail"
+        android:name="com.example.itemmanagement.ui.detail.ItemDetailFragment"
+        android:label="物品详情">
+        <argument
+            android:name="itemId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+        <action
+            android:id="@+id/action_navigation_item_detail_to_editItemFragment"
+            app:destination="@id/editItemFragment">
+            <argument
+                android:name="mode"
+                app:argType="string"
+                android:defaultValue="edit" />
+        </action>
+        <action
+            android:id="@+id/action_navigation_item_detail_to_mapViewer"
+            app:destination="@id/navigation_map_viewer"
+            app:enterAnim="@anim/fade_in_material"
+            app:exitAnim="@anim/fade_out_material"
+            app:popEnterAnim="@anim/fade_in_material"
+            app:popExitAnim="@anim/fade_out_material" />
+    </fragment>
+    
+    <!-- 地图查看器 -->
+    <fragment
+        android:id="@+id/navigation_map_viewer"
+        android:name="com.example.itemmanagement.ui.map.MapViewerFragment"
+        android:label="地图查看">
+        <argument
+            android:name="latitude"
+            app:argType="float" />
+        <argument
+            android:name="longitude"
+            app:argType="float" />
+        <argument
+            android:name="itemName"
+            app:argType="string" />
+        <argument
+            android:name="address"
+            app:argType="string" />
+    </fragment>
+    
+    <!-- 地图选点器 -->
+    <fragment
+        android:id="@+id/navigation_map_picker"
+        android:name="com.example.itemmanagement.ui.map.MapPickerFragment"
+        android:label="选择位置">
+        <argument
+            android:name="initialLatitude"
+            app:argType="float"
+            android:defaultValue="0.0" />
+        <argument
+            android:name="initialLongitude"
+            app:argType="float"
+            android:defaultValue="0.0" />
+    </fragment>
+
+    <!-- 购物清单转入库存全屏Fragment -->
+    <fragment
+        android:id="@+id/navigation_transfer_to_inventory_fullscreen"
+        android:name="com.example.itemmanagement.ui.shopping.TransferToInventoryFullScreenFragment"
+        android:label="物品入库">
+        <argument
+            android:name="itemId"
+            app:argType="long"
+            android:defaultValue="0L" />
+        <argument
+            android:name="itemName"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <!-- 添加购物物品Fragment -->
+    <fragment
+        android:id="@+id/navigation_add_shopping_item"
+        android:name="com.example.itemmanagement.ui.shopping.AddShoppingItemFragment"
+        android:label="添加购物物品">
+        <argument
+            android:name="listId"
+            app:argType="long"
+            android:defaultValue="1L" />
+        <argument
+            android:name="listName"
+            app:argType="string"
+            android:defaultValue="购物清单" />
+    </fragment>
+
+    <!-- 数据导出页面 -->
+    <fragment
+        android:id="@+id/navigation_data_export"
+        android:name="com.example.itemmanagement.ui.export.DataExportFragment"
+        android:label="数据导出" />
+
+    <!-- 个人设置相关页面 -->
+    <fragment
+        android:id="@+id/navigation_app_settings"
+        android:name="com.example.itemmanagement.ui.profile.settings.AppSettingsFragment"
+        android:label="应用设置">
+        <action
+            android:id="@+id/action_app_settings_to_reminder_settings"
+            app:destination="@id/navigation_reminder_settings" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_edit_profile"
+        android:name="com.example.itemmanagement.ui.profile.edit.EditProfileFragment"
+        android:label="编辑资料" />
+
+    <fragment
+        android:id="@+id/navigation_recycle_bin"
+        android:name="com.example.itemmanagement.ui.recycle.RecycleBinFragment"
+        android:label="回收站" />
+
+    <fragment
+        android:id="@+id/navigation_donation"
+        android:name="com.example.itemmanagement.ui.profile.donation.DonationM3Fragment"
+        android:label="联系我们" />
+
+    <fragment
+        android:id="@+id/navigation_about_app"
+        android:name="com.example.itemmanagement.ui.profile.about.AboutAppFragment"
+        android:label="关于应用" />
+    
+    <!-- 模板管理相关页面 -->
+    <fragment
+        android:id="@+id/navigation_template_management"
+        android:name="com.example.itemmanagement.ui.template.TemplateManagementFragment"
+        android:label="模板管理">
+        <action
+            android:id="@+id/action_template_management_to_add_edit_template"
+            app:destination="@id/navigation_add_edit_template" />
+    </fragment>
+    
+    <fragment
+        android:id="@+id/navigation_add_edit_template"
+        android:name="com.example.itemmanagement.ui.template.AddEditTemplateFragment"
+        android:label="编辑模板">
+        <argument
+            android:name="templateId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+</navigation> 

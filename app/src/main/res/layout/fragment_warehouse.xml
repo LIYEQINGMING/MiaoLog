@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 搜索栏容器 - 与首页保持完全一致 -->
+    <LinearLayout
+        android:id="@+id/searchContainer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <!-- 搜索卡片 - 与首页完全一致 -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            app:cardBackgroundColor="@color/search_bar_background"
+            app:cardCornerRadius="22dp"
+            app:cardElevation="1dp"
+            app:strokeColor="@color/search_bar_stroke"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <!-- 搜索图标 -->
+                <ImageView
+                    android:id="@+id/searchIcon"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_search"
+                    android:contentDescription="搜索"
+                    app:tint="@color/search_bar_icon" />
+
+                <!-- 搜索输入框 -->
+                <EditText
+                    android:id="@+id/searchEditText"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@null"
+                    android:hint="搜索物品"
+                    android:textColorHint="@color/search_bar_hint"
+                    android:textColor="@color/search_bar_text"
+                    android:textSize="16sp"
+                    android:imeOptions="actionSearch"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="8dp"
+                    android:gravity="center_vertical" />
+
+                <!-- 清除搜索图标 -->
+                <ImageView
+                    android:id="@+id/clearSearchIcon"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_clear"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:visibility="gone"
+                    android:contentDescription="清除搜索"
+                    app:tint="@color/search_bar_icon" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+    </LinearLayout>
+
+    <!-- 排序栏 - 淘宝风格，无背景 -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/sortBarCard"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/searchContainer">
+
+            <!-- 左侧排序选项 -->
+            <HorizontalScrollView
+                android:id="@+id/sortOptionsScroll"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/filterButton"
+                app:layout_constraintBottom_toBottomOf="parent">
+
+                <LinearLayout
+                    android:id="@+id/sortBar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp">
+
+                    <TextView
+                        android:id="@+id/sortComprehensive"
+                        style="@style/Widget.App.SortButton"
+                        android:layout_width="wrap_content"
+                        android:text="综合" />
+
+                    <TextView
+                        android:id="@+id/sortQuantity"
+                        style="@style/Widget.App.SortButton"
+                        android:layout_width="wrap_content"
+                        android:text="数量" />
+
+                    <TextView
+                        android:id="@+id/sortPrice"
+                        style="@style/Widget.App.SortButton"
+                        android:layout_width="wrap_content"
+                        android:text="单价" />
+
+                    <TextView
+                        android:id="@+id/sortRating"
+                        style="@style/Widget.App.SortButton"
+                        android:layout_width="wrap_content"
+                        android:text="评分" />
+
+                    <TextView
+                        android:id="@+id/sortShelfLife"
+                        style="@style/Widget.App.SortButton"
+                        android:layout_width="wrap_content"
+                        android:text="剩余保质期" />
+
+                    <TextView
+                        android:id="@+id/sortAddTime"
+                        style="@style/Widget.App.SortButton"
+                        android:layout_width="wrap_content"
+                        android:text="添加时间" />
+
+                </LinearLayout>
+            </HorizontalScrollView>
+
+            <!-- 右侧筛选按钮 -->
+            <TextView
+                android:id="@+id/filterButton"
+                style="@style/Widget.App.SortButton"
+                android:layout_width="wrap_content"
+                android:drawableStart="@drawable/ic_filter"
+                android:drawablePadding="4dp"
+                android:text="筛选"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent" />
+
+            <!-- 分隔线 -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="24dp"
+                android:background="?attr/colorOutlineVariant"
+                app:layout_constraintEnd_toStartOf="@+id/filterButton"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- 筛选状态指示器 -->
+    <LinearLayout
+        android:id="@+id/filterChipContainer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="2dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/sortBarCard">
+
+        <!-- 固定的清除全部芯片 -->
+        <com.google.android.material.chip.Chip
+            android:id="@+id/clearAllChip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="清除全部"
+            android:visibility="gone"
+            app:chipIcon="@drawable/ic_clear"
+            android:layout_marginEnd="8dp" />
+
+        <!-- 可滚动的筛选芯片 -->
+        <HorizontalScrollView
+            android:id="@+id/filterChipScrollView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/filterChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+        app:singleLine="true" />
+
+        </HorizontalScrollView>
+
+    </LinearLayout>
+
+    <!-- 物品列表 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:padding="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/filterChipContainer" />
+
+    <!-- M3风格空状态视图 -->
+    <LinearLayout
+        android:id="@+id/emptyView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/filterChipContainer">
+
+        <!-- 空状态图标 -->
+        <ImageView
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_marginBottom="24dp"
+            android:src="@drawable/ic_warehouse_empty"
+            android:contentDescription="仓库为空"
+            app:tint="?attr/colorOnSurfaceVariant"
+            android:alpha="0.6" />
+
+        <!-- 主标题 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="仓库暂时为空"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+            android:textColor="?attr/colorOnSurface"
+            android:layout_marginBottom="8dp"
+            android:textAlignment="center" />
+
+        <!-- 描述文字 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="开始添加您的第一个物品，\n让智能管理从这里开始"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAlignment="center"
+            android:lineSpacingExtra="2dp"
+            android:layout_marginBottom="24dp" />
+
+        <!-- 操作按钮 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/addFirstItemButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="添加物品"
+            android:textAllCaps="false"
+            app:icon="@drawable/ic_add"
+            app:iconGravity="textStart"
+            style="@style/Widget.Material3.Button" />
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout> 

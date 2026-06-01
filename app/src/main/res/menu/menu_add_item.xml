@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    
+    <!-- 🧪 测试填充按钮（已隐藏，用于开发测试）
+    <item
+        android:id="@+id/action_test_fill"
+        android:icon="@drawable/ic_star"
+        android:title="测试填充"
+        app:iconTint="?attr/colorOnSurface"
+        app:showAsAction="always"/>
+    -->
+    
+    <item
+        android:id="@+id/action_scan"
+        android:icon="@drawable/ic_scan"
+        android:title="扫描条码"
+        app:iconTint="?attr/colorOnSurface"
+        app:showAsAction="always"/>
+        
+    <item
+        android:id="@+id/action_camera"
+        android:icon="@drawable/ic_camera"
+        android:title="拍照"
+        app:iconTint="?attr/colorOnSurface"
+        app:showAsAction="always"/>
+
+    <item
+        android:id="@+id/action_clear"
+        android:icon="@drawable/ic_cleanup"
+        android:title="清除"
+        app:iconTint="?attr/colorOnSurface"
+        app:showAsAction="always"/>
+</menu> 

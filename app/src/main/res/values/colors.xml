@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+Material 3主颜色文件 - 清洁版本
+只包含必需的基础颜色引用，避免重复定义
+-->
+<resources>
+    <!-- 基础黑白色保持不变 -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- 心愿单功能专用颜色 -->
+    <color name="secondary">#03DAC6</color>
+    <color name="tertiary">#FF9800</color>
+    <color name="surface_container">#F8F9FA</color>
+    <color name="outline">#BDBDBD</color>
+    
+    <!-- Priority colors for wishlist -->
+    <color name="priority_low">#9E9E9E</color>
+    <color name="priority_normal">#2196F3</color>
+    <color name="priority_high">#FF9800</color>
+    <color name="priority_urgent">#F44336</color>
+    
+    <!-- Surface and overlay colors -->
+    <color name="surface_variant_overlay">#80000000</color>
+    
+    <!-- Additional Material 3 colors for wishlist -->
+    <color name="success_container">#E8F5E8</color>
+    <color name="warning_container">#FFF3E0</color>
+
+    <!-- 购物清单优先级颜色（综合优先级指示器） -->
+    <color name="shopping_priority_critical">#F44336</color>     <!-- 红色：9-10分（关键+紧急） -->
+    <color name="shopping_priority_high">#FF9800</color>         <!-- 橙色：7-8分（重要） -->
+    <color name="shopping_priority_normal">#FFC107</color>       <!-- 黄色：5-6分（一般） -->
+    <color name="shopping_priority_low">#4CAF50</color>          <!-- 绿色：1-4分（次要） -->
+    
+    <!-- 预算进度条颜色 -->
+    <color name="budget_safe">#4CAF50</color>                    <!-- 绿色：<80% -->
+    <color name="budget_warning">#FF9800</color>                 <!-- 橙色：80-100% -->
+    <color name="budget_over">#F44336</color>                    <!-- 红色：>100% -->
+    
+    <!-- 排序按钮颜色 -->
+    <color name="sort_text_selected">#FF6B00</color>             <!-- 选中状态：橙色 -->
+    <color name="sort_text_normal">#666666</color>               <!-- 未选中状态：灰色 -->
+    
+    <!-- 分割线颜色 -->
+    <color name="divider_gray">#CCCCCC</color>                   <!-- 灰色分割线 -->
+
+    <!-- 搜索框颜色 - 浅色模式固定白色 -->
+    <color name="search_bar_background">#FFFFFF</color>          <!-- 搜索框背景：白色 -->
+    <color name="search_bar_stroke">#E0E0E0</color>              <!-- 搜索框边框：浅灰 -->
+    <color name="search_bar_text">#212121</color>                <!-- 搜索框文字：深灰 -->
+    <color name="search_bar_hint">#9E9E9E</color>                <!-- 搜索框提示：中灰 -->
+    <color name="search_bar_icon">#757575</color>                <!-- 搜索框图标：灰色 -->
+
+</resources> 

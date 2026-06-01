@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bottom_sheet_background">
+
+    <!-- 主要内容容器 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+        
+        <!-- 拖拽响应区域容器 - 包含手柄和标题栏 -->
+        <LinearLayout
+            android:id="@+id/dragHandleContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground">
+
+        <!-- 拖拽手柄 -->
+        <View
+            android:id="@+id/dragHandle"
+            android:layout_width="32dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bottom_sheet_drag_handle" />
+
+        <!-- 标题栏 -->
+        <RelativeLayout
+            android:id="@+id/titleBar"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="@android:color/transparent"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="筛选"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/resetButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                app:icon="@drawable/ic_cleanup"
+                app:iconSize="20dp"
+                app:iconGravity="textStart"
+                android:minWidth="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_alignParentBottom="true"
+                android:layout_marginStart="-16dp"
+                android:layout_marginEnd="-16dp"
+                android:background="?attr/colorOutlineVariant" />
+        </RelativeLayout>
+
+    </LinearLayout>
+
+    <!-- 主要内容区域 - 左右双栏布局（只响应内容滚动，不响应拖拽） -->
+    <LinearLayout
+        android:id="@+id/contentContainer"
+        android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+        android:orientation="horizontal"
+        android:clickable="true"
+        android:focusable="true"
+        android:focusableInTouchMode="true">
+
+        <!-- 左侧导航栏 -->
+        <LinearLayout
+            android:layout_width="120dp"
+            android:layout_height="match_parent"
+            android:background="?attr/colorSurfaceContainerLow"
+            android:orientation="vertical"
+            android:paddingTop="8dp">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/navigationRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:scrollbarStyle="insideOverlay" />
+        </LinearLayout>
+
+        <!-- 分隔线 -->
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="?attr/colorOutlineVariant" />
+
+        <!-- 右侧内容区域 - 统一显示所有字段 -->
+        <androidx.core.widget.NestedScrollView
+            android:id="@+id/contentScrollView"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:fillViewport="true"
+            android:scrollbars="vertical"
+            android:fadeScrollbars="false"
+            android:overScrollMode="always"
+            android:scrollbarStyle="insideOverlay"
+            android:scrollbarAlwaysDrawVerticalTrack="true"
+            android:clickable="true"
+            android:focusable="true"
+            android:focusableInTouchMode="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="8dp"
+                android:clipToPadding="false">
+
+                <!-- 核心分类字段区域 -->
+                                <include 
+                    android:id="@+id/coreSection"
+                                    layout="@layout/filter_core_section" />
+
+                <!-- 分隔线 -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <!-- 位置筛选字段区域 -->
+                                <include 
+                    android:id="@+id/locationSection"
+                                    layout="@layout/filter_location_section" />
+
+                <!-- 分隔线 -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <!-- 状态与评级字段区域 -->
+                                <include 
+                    android:id="@+id/statusRatingSection"
+                                    layout="@layout/filter_status_rating_section" />
+
+                <!-- 分隔线 -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <!-- 数值范围字段区域 -->
+                                <include 
+                    android:id="@+id/valueRangeSection"
+                                    layout="@layout/filter_value_range_section" />
+
+                <!-- 分隔线 -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                                <!-- 日期筛选字段区域 -->
+                                <include 
+                    android:id="@+id/dateSection"
+                                    layout="@layout/filter_date_section" />
+                                    
+                                <!-- 底部空白区域与人生哲理 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                                    android:orientation="vertical"
+                                    android:paddingTop="40dp"
+                                    android:paddingBottom="280dp"
+                                    android:gravity="center">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                                        android:text="「 精准筛选，如人生选择，重要的不是拥有所有选项，而是找到真正适合的那一个 」"
+                                        android:textColor="?attr/colorOnSurfaceVariant"
+                                        android:textSize="12sp"
+                                        android:textStyle="italic"
+                                        android:gravity="center"
+                                        android:lineSpacingExtra="4dp"
+                                        android:paddingHorizontal="32dp"
+                                        android:alpha="0.6" />
+                </LinearLayout>
+            </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
+        
+        </LinearLayout>
+        
+    </LinearLayout>
+
+</FrameLayout>
+

@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material 3 购物清单管理卡片 - 优化版 -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="8dp"
+    android:layout_marginVertical="8dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="4dp"
+    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+    app:strokeWidth="0dp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/constraintLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp">
+
+        <!-- 清单图标 -->
+        <ImageView
+            android:id="@+id/listIcon"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_list"
+            android:contentDescription="购物清单"
+            app:tint="?attr/colorPrimary"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- 状态指示器 -->
+        <TextView
+            android:id="@+id/tvListStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="进行中"
+            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:paddingStart="8dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="3dp"
+            android:background="@drawable/bg_status_label_normal"
+            android:textColor="?attr/colorOnPrimaryContainer"
+            app:layout_constraintEnd_toStartOf="@id/btnMore"
+            app:layout_constraintTop_toTopOf="@id/listIcon"
+            app:layout_constraintBottom_toBottomOf="@id/listIcon"
+            tools:text="进行中" />
+
+        <!-- 更多操作按钮 -->
+        <ImageButton
+            android:id="@+id/btnMore"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_more_vert_24dp"
+            android:contentDescription="更多操作"
+            app:tint="?attr/colorOnSurfaceVariant"
+            android:scaleType="center"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="@id/listIcon"
+            app:layout_constraintBottom_toBottomOf="@id/listIcon" />
+
+        <!-- 清单名称 -->
+        <TextView
+            android:id="@+id/tvListName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp"
+            android:text="购物清单名称"
+            android:textAppearance="?attr/textAppearanceBodyLarge"
+            android:textColor="?attr/colorOnSurface"
+            android:maxLines="1"
+            android:ellipsize="end"
+            app:layout_constraintStart_toEndOf="@id/listIcon"
+            app:layout_constraintEnd_toStartOf="@id/tvListStatus"
+            app:layout_constraintTop_toTopOf="@id/listIcon"
+            tools:text="本周生鲜采购清单" />
+
+        <!-- 清单描述 -->
+        <TextView
+            android:id="@+id/tvListDescription"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="清单描述"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="@id/tvListName"
+            app:layout_constraintEnd_toEndOf="@id/tvListName"
+            app:layout_constraintTop_toBottomOf="@id/tvListName"
+            tools:text="包含本周需要的新鲜蔬菜和水果"
+            tools:visibility="visible" />
+
+        <!-- 进度信息区域 -->
+        <LinearLayout
+            android:id="@+id/progressContainer"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/listIcon">
+
+            <!-- 进度条 -->
+            <ProgressBar
+                android:id="@+id/progressBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="6dp"
+                android:layout_weight="1"
+                android:progress="60"
+                android:progressTint="?attr/colorPrimary"
+                android:progressBackgroundTint="?attr/colorSurfaceVariant"
+                tools:progress="60" />
+
+            <!-- 进度文字 -->
+            <TextView
+                android:id="@+id/tvProgress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="12/20"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorPrimary"
+                tools:text="12/20" />
+
+        </LinearLayout>
+
+        <!-- 详细信息区域 -->
+        <LinearLayout
+            android:id="@+id/detailsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/progressContainer">
+
+            <!-- 类型标签 -->
+            <TextView
+                android:id="@+id/tvListType"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="日常补充"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:background="@drawable/bg_category_tag"
+                android:paddingStart="6dp"
+                android:paddingTop="3dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="3dp"
+                tools:text="日常补充" />
+
+            <!-- 占位空间 -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!-- 预算信息 -->
+            <TextView
+                android:id="@+id/tvListBudget"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="¥200"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorPrimary"
+                android:visibility="gone"
+                tools:text="¥200"
+                tools:visibility="visible" />
+
+            <!-- 创建时间 -->
+            <TextView
+                android:id="@+id/tvListDate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="创建于 12-25"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                tools:text="创建于 12-25" />
+
+        </LinearLayout>
+
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>
+
