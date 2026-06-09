@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
 import com.example.itemmanagement.ui.components.GlassCard
 import com.example.itemmanagement.ui.components.ItemCategoryPickerRow
-import com.example.itemmanagement.ui.components.ItemCategoryPickerSheet
 import com.example.itemmanagement.ui.components.ItemCompactSelectRow
 import com.example.itemmanagement.ui.components.ItemCompactTextRow
 import com.example.itemmanagement.ui.components.ItemFieldPickerSheet
@@ -93,6 +93,7 @@ fun EditItemScreen(
     onPickPhoto: () -> Unit,
     onTakePhoto: () -> Unit,
     onRemovePhoto: (Int) -> Unit,
+    onShowCategoryPicker: () -> Unit,
     onNavigateBack: () -> Unit,
     onRequestDelete: () -> Unit,
     onSave: () -> Unit
@@ -105,7 +106,6 @@ fun EditItemScreen(
     val hasUnsavedChanges by viewModel.hasUnsavedChanges.observeAsState(false)
 
     val name = itemStringValue(viewModel.getFieldValue("名称"))
-    val category = itemStringValue(viewModel.getFieldValue("分类"))
     val selectedFieldNames = remember(selectedFields) { selectedFields.map { it.name }.toSet() }
 
     var activeSheet by rememberSaveable { mutableStateOf<EditFieldSection?>(null) }
@@ -154,9 +154,9 @@ fun EditItemScreen(
         baseSection = {
             EditBaseFieldsContent(
                 viewModel = viewModel,
-                category = category,
                 visibleFields = baseFields,
-                onDeleteField = { pendingDeleteField = it }
+                onDeleteField = { pendingDeleteField = it },
+                onShowCategoryPicker = onShowCategoryPicker
             )
             ItemSectionAddButton(
                 enabled = availableBaseFields.isNotEmpty(),
@@ -321,11 +321,12 @@ private fun EditHeaderCard(
 @Composable
 private fun EditBaseFieldsContent(
     viewModel: EditItemViewModel,
-    category: String,
     visibleFields: List<String>,
-    onDeleteField: (String) -> Unit
+    onDeleteField: (String) -> Unit,
+    onShowCategoryPicker: () -> Unit
 ) {
-    var showCategorySheet by rememberSaveable { mutableStateOf(false) }
+    val categoryPath = itemStringValue(viewModel.getFieldValue("分类"))
+    val categoryIcon = remember(categoryPath) { viewModel.getCategoryIcon(categoryPath) }
 
     ItemCompactTextRow(
         label = "名称",
@@ -337,8 +338,9 @@ private fun EditBaseFieldsContent(
 
     ItemCategoryPickerRow(
         label = "分类",
-        value = itemStringValue(viewModel.getFieldValue("分类")),
-        onClick = { showCategorySheet = true }
+        value = categoryPath,
+        iconText = categoryIcon,
+        onClick = onShowCategoryPicker
     )
 
     ItemQuantityRow(
@@ -353,17 +355,6 @@ private fun EditBaseFieldsContent(
         .forEach { fieldName ->
             EditBaseOptionalFieldItem(onDelete = { onDeleteField(fieldName) }) {
                 when (fieldName) {
-                    "子分类" -> {
-                        if (category.isNotBlank()) {
-                            ItemCompactSelectRow(
-                                label = "子分类",
-                                value = itemStringValue(viewModel.getFieldValue("子分类")),
-                                placeholder = "选择子分类",
-                                options = viewModel.getSubCategoriesForCategory(category),
-                                onValueSelected = { viewModel.saveFieldValue("子分类", it) }
-                            )
-                        }
-                    }
                     else -> {
                         ItemCompactTextRow(
                             label = fieldName,
@@ -376,24 +367,6 @@ private fun EditBaseFieldsContent(
             }
         }
 
-    if (showCategorySheet) {
-        ItemCategoryPickerSheet(
-            currentValue = itemStringValue(viewModel.getFieldValue("分类")),
-            options = (viewModel.getFieldProperties("分类").options.orEmpty() + viewModel.getCustomOptions("分类")).distinct(),
-            onDismiss = { showCategorySheet = false },
-            onCreateCategory = { newCategory ->
-                viewModel.addCustomOption("分类", newCategory)
-                viewModel.saveFieldValue("分类", newCategory)
-                viewModel.updateSubCategoryOptions(newCategory)
-                showCategorySheet = false
-            },
-            onSelectCategory = { selectedCategory ->
-                viewModel.saveFieldValue("分类", selectedCategory)
-                viewModel.updateSubCategoryOptions(selectedCategory)
-                showCategorySheet = false
-            }
-        )
-    }
 }
 
 private fun buildEditSupplementFields(

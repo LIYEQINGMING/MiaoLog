@@ -23,6 +23,8 @@ import com.example.itemmanagement.ui.common.ValidationType
 import com.example.itemmanagement.ui.common.DisplayStyle
 import com.example.itemmanagement.ui.base.BaseItemViewModel
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
+import com.example.itemmanagement.utils.combineCategoryPath
+import com.example.itemmanagement.utils.normalizeCategoryPath
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -126,13 +128,9 @@ class AddItemViewModel(
         fieldValues["名称"] = item.name
         Log.d("AddItemViewModel", "  ✓ 名称 = ${item.name}")
         
-        fieldValues["分类"] = item.category
-        Log.d("AddItemViewModel", "  ✓ 分类 = ${item.category}")
-        
-        item.subCategory?.let { 
-            fieldValues["子分类"] = it 
-            Log.d("AddItemViewModel", "  ✓ 子分类 = $it")
-        }
+        val categoryPath = combineCategoryPath(item.category, item.subCategory)
+        fieldValues["分类"] = categoryPath.ifBlank { item.category }
+        Log.d("AddItemViewModel", "  ✓ 分类 = ${fieldValues["分类"]}")
         item.brand?.let { 
             fieldValues["品牌"] = it 
             Log.d("AddItemViewModel", "  ✓ 品牌 = $it")
@@ -386,8 +384,7 @@ class AddItemViewModel(
      */
     private fun buildUnifiedItemFromFields(): UnifiedItemEntity {
         val name = (fieldValues["名称"] as? String)?.trim() ?: ""
-        val category = (fieldValues["分类"] as? String)?.takeIf { it.isNotBlank() } ?: "未指定"
-        val subCategory = (fieldValues["子分类"] as? String)?.takeIf { it.isNotBlank() }
+        val category = normalizeCategoryPath(fieldValues["分类"] as? String).ifBlank { "未指定" }
         val brand = (fieldValues["品牌"] as? String)?.takeIf { it.isNotBlank() }
         val specification = (fieldValues["规格"] as? String)?.takeIf { it.isNotBlank() }
         val customNote = (fieldValues["备注"] as? String)?.takeIf { it.isNotBlank() }
@@ -435,7 +432,7 @@ class AddItemViewModel(
             id = 0, // 新物品，ID为0
             name = name,
             category = category,
-            subCategory = subCategory,
+            subCategory = null,
             brand = brand,
             specification = specification,
             customNote = customNote,
@@ -730,7 +727,7 @@ class AddItemViewModel(
             quantity = quantity,
             unit = quantityUnit ?: "",  // 如果为null，使用空字符串
             location = location,
-            category = (fieldValues["分类"] as? String)?.takeIf { it.isNotBlank() } ?: "",  // 如果为null或空，使用空字符串
+            category = normalizeCategoryPath(fieldValues["分类"] as? String),
             productionDate = productionDate,
             expirationDate = expirationDate,
             openStatus = openStatus,
@@ -742,7 +739,7 @@ class AddItemViewModel(
             priceUnit = priceUnit,
             purchaseChannel = fieldValues["购买渠道"] as? String,
             storeName = fieldValues["商家名称"] as? String,
-            subCategory = fieldValues["子分类"] as? String,
+            subCategory = null,
             customNote = fieldValues["备注"] as? String,
             season = seasonString,
             capacity = (fieldValues["容量"] as? String)?.toDoubleOrNull(),

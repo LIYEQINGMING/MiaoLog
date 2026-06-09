@@ -125,6 +125,7 @@ class ProfileFragment : Fragment() {
      */
     private fun handleMenuItemClick(menuId: String) {
         when (menuId) {
+            "category_management" -> navigateToCategoryManagement()
             "recycle_bin" -> navigateToRecycleBin()
             "data_export" -> navigateToDataExport()
             "app_settings" -> navigateToAppSettings()
@@ -163,6 +164,14 @@ class ProfileFragment : Fragment() {
             findNavController().navigate(R.id.action_profile_to_recycle_bin)
         } catch (e: Exception) {
             SnackbarHelper.show(requireView(), "回收站功能开发中")
+        }
+    }
+
+    private fun navigateToCategoryManagement() {
+        try {
+            findNavController().navigate(R.id.action_profile_to_category_management)
+        } catch (e: Exception) {
+            SnackbarHelper.show(requireView(), "分类管理页面开发中")
         }
     }
 

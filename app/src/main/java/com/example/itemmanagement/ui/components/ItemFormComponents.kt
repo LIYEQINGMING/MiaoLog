@@ -1,7 +1,10 @@
 package com.example.itemmanagement.ui.components
 
 import android.app.DatePickerDialog
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,20 +32,27 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +65,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -67,7 +78,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -80,6 +93,14 @@ import com.example.itemmanagement.data.model.PriceAttributeHelper
 import com.example.itemmanagement.data.model.PriceAttributeValue
 import com.example.itemmanagement.ui.add.Field
 import com.example.itemmanagement.ui.base.BaseItemViewModel
+import com.example.itemmanagement.ui.main.LiquidBackground
+import com.example.itemmanagement.utils.buildCategoryChildNodes
+import com.example.itemmanagement.utils.categoryPathDisplayName
+import com.example.itemmanagement.utils.categoryPathParent
+import com.example.itemmanagement.utils.defaultCategoryIcon
+import com.example.itemmanagement.utils.joinCategoryPath
+import com.example.itemmanagement.utils.normalizeCategoryPath
+import com.example.itemmanagement.utils.splitCategoryPath
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -446,8 +467,11 @@ fun ItemQuantityRow(
 fun ItemCategoryPickerRow(
     label: String,
     value: String,
+    iconText: String? = null,
     onClick: () -> Unit
 ) {
+    val displayValue = categoryPathDisplayName(value).ifBlank { value }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -482,12 +506,12 @@ fun ItemCategoryPickerRow(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                     ) {
                         Text(
-                            text = itemCategoryEmoji(value.ifBlank { "其他" }),
+                            text = iconText ?: defaultCategoryIcon(displayValue.ifBlank { "其他" }),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
                     Text(
-                        text = value.ifBlank { "选择分类" },
+                        text = displayValue.ifBlank { "选择分类" },
                         color = if (value.isBlank()) {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         } else {
@@ -506,83 +530,697 @@ fun ItemCategoryPickerRow(
 fun ItemCategoryPickerSheet(
     currentValue: String,
     options: List<String>,
+    iconMap: Map<String, String> = emptyMap(),
     onDismiss: () -> Unit,
     onCreateCategory: (String) -> Unit,
     onSelectCategory: (String) -> Unit
 ) {
-    var input by rememberSaveable { mutableStateOf("") }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val filteredOptions = remember(input, options) {
-        val keyword = input.trim()
-        if (keyword.isBlank()) options else options.filter { it.contains(keyword, ignoreCase = true) }
+    val normalizedCurrentValue = remember(currentValue) { normalizeCategoryPath(currentValue) }
+    val normalizedOptions = remember(options, normalizedCurrentValue) {
+        (options + listOf(normalizedCurrentValue))
+            .map(::normalizeCategoryPath)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedBy { it.length }
+    }
+    val expandablePaths = remember(normalizedOptions) {
+        normalizedOptions.filter { option ->
+            normalizedOptions.any { candidate ->
+                candidate != option && candidate.startsWith("$option / ")
+            }
+        }.toSet()
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.92f)
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = "选择分类",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
+    var searchQuery by rememberSaveable(normalizedCurrentValue) { mutableStateOf("") }
+    var browsingPath by rememberSaveable(normalizedCurrentValue) { mutableStateOf(categoryPathParent(normalizedCurrentValue)) }
+    var selectedPath by rememberSaveable(normalizedCurrentValue) { mutableStateOf(normalizedCurrentValue) }
+    var createParentPath by rememberSaveable(normalizedCurrentValue) { mutableStateOf(browsingPath) }
+    var showCreateDialog by rememberSaveable { mutableStateOf(false) }
+    val searchResults = remember(searchQuery, normalizedOptions) {
+        val keyword = searchQuery.trim()
+        if (keyword.isBlank()) {
+            emptyList()
+        } else {
+            normalizedOptions.filter {
+                it.contains(keyword, ignoreCase = true) ||
+                    categoryPathDisplayName(it).contains(keyword, ignoreCase = true)
+            }
+        }
+    }
+    val childNodes = remember(normalizedOptions, browsingPath) {
+        buildCategoryChildNodes(normalizedOptions, browsingPath)
+    }
+    val pathSegments = remember(browsingPath) { splitCategoryPath(browsingPath) }
+    val isSearching = searchQuery.trim().isNotBlank()
+    val density = LocalDensity.current
+
+    BackHandler {
+        when {
+            showCreateDialog -> showCreateDialog = false
+            browsingPath.isBlank() -> onDismiss()
+            else -> browsingPath = categoryPathParent(browsingPath)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LiquidBackground(modifier = Modifier.fillMaxSize())
+        Column(modifier = Modifier.fillMaxSize()) {
+            ItemCategoryPickerHeader(
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                browsingPath = browsingPath,
+                pathSegments = pathSegments,
+                selectedPath = selectedPath,
+                onPathSelected = { browsingPath = it },
+                onBack = {
+                    if (browsingPath.isBlank()) {
+                        onDismiss()
+                    } else {
+                        browsingPath = categoryPathParent(browsingPath)
+                    }
+                },
+                onCreateCategory = {
+                    createParentPath = browsingPath
+                    showCreateDialog = true
+                }
             )
 
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("搜索分类或新建分类") },
-                trailingIcon = {
-                    IconButton(
-                        onClick = {
-                            val newCategory = input.trim()
-                            if (newCategory.isNotBlank()) {
-                                onCreateCategory(newCategory)
+            Box(modifier = Modifier.weight(1f)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 18.dp,
+                        bottom = 24.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    if (!isSearching) {
+                        if (childNodes.isEmpty()) {
+                            item {
+                                ItemCategoryPickerEmptyState(
+                                    title = if (browsingPath.isBlank()) "还没有可浏览的分类" else "当前分类下还没有子分类",
+                                    description = if (browsingPath.isBlank()) {
+                                        "可以先创建一级分类。"
+                                    } else {
+                                        "可以直接选中当前节点，也可以继续新建子分类。"
+                                    }
+                                )
+                            }
+                        } else {
+                            items(childNodes, key = { it.path }) { node ->
+                                ItemCategoryPickerEntryCard(
+                                    path = node.path,
+                                    name = node.name,
+                                    icon = iconMap[node.path] ?: defaultCategoryIcon(node.name.ifBlank { "其他" }),
+                                    selected = selectedPath == node.path,
+                                    hasChildren = node.hasChildren,
+                                    onToggleSelected = {
+                                        selectedPath = if (selectedPath == node.path) "" else node.path
+                                    },
+                                    onOpenChild = { browsingPath = node.path },
+                                    onCreateChild = {
+                                        createParentPath = node.path
+                                        showCreateDialog = true
+                                    }
+                                )
                             }
                         }
+                    } else {
+                        if (searchResults.isEmpty()) {
+                            item {
+                                ItemCategoryPickerEmptyState(
+                                    title = "没有找到匹配分类",
+                                    description = "调整关键词继续搜索，或先返回当前层级。"
+                                )
+                            }
+                        } else {
+                            items(searchResults, key = { it }) { path ->
+                                ItemCategoryPickerSearchResultCard(
+                                    path = path,
+                                    icon = iconMap[path] ?: defaultCategoryIcon(categoryPathDisplayName(path)),
+                                    selected = selectedPath == path,
+                                    hasChildren = expandablePaths.contains(path),
+                                    onToggleSelected = {
+                                        selectedPath = if (selectedPath == path) "" else path
+                                    },
+                                    onOpenChild = {
+                                        browsingPath = path
+                                        searchQuery = ""
+                                    },
+                                    onCreateChild = {
+                                        createParentPath = path
+                                        showCreateDialog = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            ItemCategoryPickerBottomBar(
+                enabled = selectedPath.isNotBlank(),
+                onCancel = onDismiss,
+                onConfirm = { onSelectCategory(selectedPath) }
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxHeight()
+                .width(28.dp)
+                .pointerInput(browsingPath) {
+                    val triggerDistancePx = with(density) { 72.dp.toPx() }
+                    var totalDrag = 0f
+
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDrag = 0f },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                totalDrag += dragAmount
+                            }
+                            change.consume()
+                        },
+                        onDragEnd = {
+                            if (totalDrag >= triggerDistancePx) {
+                                if (browsingPath.isBlank()) {
+                                    onDismiss()
+                                } else {
+                                    browsingPath = categoryPathParent(browsingPath)
+                                }
+                            }
+                            totalDrag = 0f
+                        },
+                        onDragCancel = {
+                            totalDrag = 0f
+                        }
+                    )
+                }
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(28.dp)
+                .pointerInput(browsingPath) {
+                    val triggerDistancePx = with(density) { 72.dp.toPx() }
+                    var totalDrag = 0f
+
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDrag = 0f },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (dragAmount < 0f) {
+                                totalDrag += -dragAmount
+                            }
+                            change.consume()
+                        },
+                        onDragEnd = {
+                            if (totalDrag >= triggerDistancePx) {
+                                if (browsingPath.isBlank()) {
+                                    onDismiss()
+                                } else {
+                                    browsingPath = categoryPathParent(browsingPath)
+                                }
+                            }
+                            totalDrag = 0f
+                        },
+                        onDragCancel = {
+                            totalDrag = 0f
+                        }
+                    )
+                }
+        )
+    }
+
+    if (showCreateDialog) {
+        ItemCategoryCreateDialog(
+            parentPath = createParentPath,
+            onDismiss = { showCreateDialog = false },
+            onConfirm = { name ->
+                val createdPath = joinCategoryPath(createParentPath, name)
+                if (createdPath.isNotBlank()) {
+                    onCreateCategory(createdPath)
+                    browsingPath = createParentPath
+                    selectedPath = createdPath
+                    showCreateDialog = false
+                }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ItemCategoryPickerHeader(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    browsingPath: String,
+    pathSegments: List<String>,
+    selectedPath: String,
+    onPathSelected: (String) -> Unit,
+    onBack: () -> Unit,
+    onCreateCategory: () -> Unit,
+) {
+    val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val headerTopPadding = (statusBarTopPadding - 8.dp).coerceAtLeast(0.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                top = headerTopPadding,
+                start = 16.dp,
+                end = 16.dp,
+                bottom = 12.dp
+            ),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            blurRadius = 28.dp,
+            contentPadding = 10.dp
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        modifier = Modifier.size(36.dp),
+                        onClick = onBack
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "选择分类",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(
+                        modifier = Modifier.size(36.dp),
+                        onClick = onCreateCategory
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "新建分类")
                     }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(18.dp)
-            )
+                }
 
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    placeholder = { Text("搜索分类名称或路径") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(20.dp)
+                )
+            }
+        }
+
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            blurRadius = 24.dp,
+            contentPadding = 14.dp
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ItemCategoryPickerPathChips(
+                    browsingPath = browsingPath,
+                    pathSegments = pathSegments,
+                    onPathSelected = onPathSelected
+                )
+                if (selectedPath.isNotBlank()) {
+                    Text(
+                        text = "当前选中：$selectedPath",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ItemCategoryPickerPathChips(
+    browsingPath: String,
+    pathSegments: List<String>,
+    onPathSelected: (String) -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChip(
+            selected = browsingPath.isBlank(),
+            onClick = { onPathSelected("") },
+            label = { Text("全部分类") }
+        )
+        pathSegments.forEachIndexed { index, segment ->
+            val partialPath = pathSegments.take(index + 1).joinToString(" / ")
+            FilterChip(
+                selected = partialPath == browsingPath,
+                onClick = { onPathSelected(partialPath) },
+                label = { Text(segment) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ItemCategoryPickerEmptyState(
+    title: String,
+    description: String,
+) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        contentPadding = 18.dp
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ItemCategoryPickerEntryCard(
+    path: String,
+    name: String,
+    icon: String,
+    selected: Boolean,
+    hasChildren: Boolean,
+    onToggleSelected: () -> Unit,
+    onOpenChild: () -> Unit,
+    onCreateChild: () -> Unit,
+) {
+    var menuExpanded by remember(path) { mutableStateOf(false) }
+
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggleSelected),
+        shape = RoundedCornerShape(22.dp),
+        contentPadding = 0.dp
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            border = if (selected) BorderStroke(1.5.dp, Color(0xFF34C759)) else null,
+            color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                filteredOptions.forEach { option ->
-                    val selected = option == currentValue
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Surface(
-                        modifier = Modifier.clickable { onSelectCategory(option) },
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                        } else {
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.10f)
-                        }
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Text(
+                            text = icon,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = if (selected) "已选中" else path,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (hasChildren) {
+                        IconButton(
+                            modifier = Modifier.size(36.dp),
+                            onClick = onOpenChild
                         ) {
-                            Text(text = itemCategoryEmoji(option))
-                            Text(option, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "进入下一级"
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("新建子分类") },
+                                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onCreateChild()
+                                }
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ItemCategoryPickerSearchResultCard(
+    path: String,
+    icon: String,
+    selected: Boolean,
+    hasChildren: Boolean,
+    onToggleSelected: () -> Unit,
+    onOpenChild: () -> Unit,
+    onCreateChild: () -> Unit,
+) {
+    var menuExpanded by remember(path) { mutableStateOf(false) }
+
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggleSelected),
+        shape = RoundedCornerShape(22.dp),
+        contentPadding = 0.dp
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            border = if (selected) BorderStroke(1.5.dp, Color(0xFF34C759)) else null,
+            color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = icon,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = categoryPathDisplayName(path),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = if (selected) "已选中" else path,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (hasChildren) {
+                            IconButton(
+                                modifier = Modifier.size(36.dp),
+                                onClick = onOpenChild
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = "进入下一级"
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        Box {
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("新建子分类") },
+                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onCreateChild()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ItemCategoryPickerBottomBar(
+    enabled: Boolean,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .imePadding()
+            .padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = 12.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            ),
+        shape = RoundedCornerShape(28.dp),
+        blurRadius = 28.dp,
+        contentPadding = 16.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = onCancel
+                ) {
+                    Text("取消")
+                }
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = enabled,
+                    onClick = onConfirm
+                ) {
+                    Text("确认分类")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ItemCategoryCreateDialog(
+    parentPath: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (parentPath.isBlank()) "新建分类" else "新建子分类") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (parentPath.isNotBlank()) {
+                    Text(
+                        text = "当前层级：$parentPath",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("请输入分类名称") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.trim().isNotEmpty(),
+                onClick = { onConfirm(name.trim()) }
+            ) {
+                Text("确认")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 @Composable

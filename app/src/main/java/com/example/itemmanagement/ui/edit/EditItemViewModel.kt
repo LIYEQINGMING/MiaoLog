@@ -17,6 +17,8 @@ import com.example.itemmanagement.data.mapper.toItem
 import com.example.itemmanagement.ui.add.Field
 import com.example.itemmanagement.ui.base.BaseItemViewModel
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
+import com.example.itemmanagement.utils.combineCategoryPath
+import com.example.itemmanagement.utils.normalizeCategoryPath
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -478,7 +480,6 @@ class EditItemViewModel(
             Field("基础信息", "位置", true, getEditModeOrder("位置")),
             Field("基础信息", "备注", true, getEditModeOrder("备注")),
             Field("分类", "分类", true, getEditModeOrder("分类")),
-            Field("分类", "子分类", true, getEditModeOrder("子分类")),
             Field("日期类", "添加日期", true, getEditModeOrder("添加日期"))
         )
         
@@ -533,8 +534,9 @@ class EditItemViewModel(
         }
         
         // 只有当分类不是"未指定"时才保存分类字段
-        if (!item.category.isNullOrBlank() && item.category != "未指定") {
-            saveFieldValue("分类", item.category)
+        val categoryPath = combineCategoryPath(item.category, item.subCategory)
+        if (categoryPath.isNotBlank() && categoryPath != "未指定") {
+            saveFieldValue("分类", categoryPath)
             fieldsToShow.add(Field("分类", "分类", true, getEditModeOrder("分类")))
         }
         
@@ -624,12 +626,6 @@ class EditItemViewModel(
         item.serialNumber?.let { if (it.isNotBlank()) {
             saveFieldValue("序列号", it)
             fieldsToShow.add(Field("商业类", "序列号", true, getEditModeOrder("序列号")))
-        }}
-        
-        // 子分类
-        item.subCategory?.let { if (it.isNotBlank() && it != "未指定") {
-            saveFieldValue("子分类", it)
-            fieldsToShow.add(Field("分类", "子分类", true, getEditModeOrder("子分类")))
         }}
         
         // 季节
@@ -983,8 +979,8 @@ class EditItemViewModel(
         return com.example.itemmanagement.data.entity.unified.UnifiedItemEntity(
             id = itemId,
             name = getFieldValue("名称")?.toString()?.trim().orEmpty(),
-            category = getFieldValue("分类")?.toString()?.takeIf { it.isNotBlank() } ?: "未指定",
-            subCategory = getFieldValue("子分类")?.toString()?.takeIf { it.isNotBlank() },
+            category = normalizeCategoryPath(getFieldValue("分类")?.toString()).ifBlank { "未指定" },
+            subCategory = null,
             brand = getFieldValue("品牌")?.toString()?.takeIf { it.isNotBlank() },
             specification = getFieldValue("规格")?.toString()?.takeIf { it.isNotBlank() },
             customNote = getFieldValue("备注")?.toString()?.takeIf { it.isNotBlank() },
@@ -1079,8 +1075,8 @@ class EditItemViewModel(
             name = getFieldValue("名称")?.toString() ?: "",
             quantity = (getFieldValue("数量")?.toString())?.toDoubleOrNull() ?: 0.0,
             unit = getFieldValue("数量_unit")?.toString() ?: "个",
-            category = getFieldValue("分类")?.toString() ?: "未指定",
-            subCategory = getFieldValue("子分类")?.toString(),
+            category = normalizeCategoryPath(getFieldValue("分类")?.toString()).ifBlank { "未指定" },
+            subCategory = null,
             brand = getFieldValue("品牌")?.toString(),
             specification = getFieldValue("规格")?.toString(),
             customNote = getFieldValue("备注")?.toString(),

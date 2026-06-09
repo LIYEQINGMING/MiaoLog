@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var navController: NavController
     private lateinit var appBarConfiguration: AppBarConfiguration
+    private var currentSystemBarTopInset: Int = 0
     
     // 🎯 跟踪TopBar当前状态，避免重复操作导致的闪现
     private var isTopBarVisible: Boolean = false
@@ -124,7 +125,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val navigationBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            currentSystemBarTopInset = systemBars.top
             
             // 给AppBarLayout设置顶部内边距（当它可见时）
             if (binding.appBarLayout.visibility == android.view.View.VISIBLE) {
@@ -132,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             }
             
             // 根据TopBar可见性动态调整Fragment容器内边距
-            adjustFragmentPadding(systemBars.top)
+            adjustFragmentPadding(currentSystemBarTopInset)
             
             insets
         }
@@ -174,6 +175,8 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_warehouse,
                 R.id.navigation_inventory_analysis,
                 R.id.navigation_profile,
+                R.id.nav_category,
+                R.id.categoryPickerFragment,
                 R.id.navigation_function -> {
                     hideTopBar()
                 }
@@ -290,7 +293,9 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_home,
                 R.id.navigation_warehouse,
                 R.id.navigation_inventory_analysis,
-                R.id.navigation_profile -> {
+                R.id.navigation_profile,
+                R.id.nav_category,
+                R.id.categoryPickerFragment -> {
                     hideTopBar()
                 }
                 // 功能页面 - 隐藏TopBar（像首页一样）
@@ -333,6 +338,7 @@ class MainActivity : AppCompatActivity() {
             R.id.navigation_transfer_to_inventory_fullscreen,
             R.id.addItemFragment,
             R.id.editItemFragment,
+            R.id.categoryPickerFragment,
             R.id.navigation_item_detail,
             R.id.navigation_map_picker,
             R.id.navigation_map_viewer -> R.id.navigation_home
@@ -378,6 +384,7 @@ class MainActivity : AppCompatActivity() {
             binding.appBarLayout.visibility = android.view.View.VISIBLE
             isTopBarVisible = true
             updateFragmentConstraints(true)
+            adjustFragmentPadding(currentSystemBarTopInset)
             
             // 🔧 强制显示ActionBar（修复Activity重建后ActionBar消失的问题）
             supportActionBar?.show()
@@ -405,6 +412,7 @@ class MainActivity : AppCompatActivity() {
             binding.appBarLayout.visibility = android.view.View.VISIBLE
             isTopBarVisible = true
             updateFragmentConstraints(true)
+            adjustFragmentPadding(currentSystemBarTopInset)
         }
         
         // 标题状态和内容管理
@@ -427,6 +435,7 @@ class MainActivity : AppCompatActivity() {
             binding.appBarLayout.visibility = android.view.View.VISIBLE
             isTopBarVisible = true
             updateFragmentConstraints(true)
+            adjustFragmentPadding(currentSystemBarTopInset)
         }
         
         // 标题状态和内容管理
@@ -463,6 +472,7 @@ class MainActivity : AppCompatActivity() {
             binding.appBarLayout.visibility = android.view.View.VISIBLE
             isTopBarVisible = true
             updateFragmentConstraints(true)
+            adjustFragmentPadding(currentSystemBarTopInset)
         }
         
         // 标题状态管理
@@ -496,11 +506,12 @@ class MainActivity : AppCompatActivity() {
             
             // 重新调整Fragment约束
             updateFragmentConstraints(false)
+            adjustFragmentPadding(currentSystemBarTopInset)
         } else {
             android.util.Log.d("MainActivity", "  ⏭️ TopBar已经隐藏，跳过")
         }
     }
-    
+
     /**
      * 更新Fragment约束
      */
@@ -525,8 +536,23 @@ class MainActivity : AppCompatActivity() {
      */
     private fun adjustFragmentPadding(statusBarHeight: Int) {
         val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)
-        val topPadding = if (binding.appBarLayout.visibility == android.view.View.VISIBLE) 0 else statusBarHeight
+        val topPadding = when {
+            binding.appBarLayout.visibility == android.view.View.VISIBLE -> 0
+            shouldFragmentManageStatusBarInset() -> 0
+            else -> statusBarHeight
+        }
         navHostFragment?.view?.setPadding(0, topPadding, 0, 0)
+    }
+
+    private fun shouldFragmentManageStatusBarInset(): Boolean {
+        if (!::navController.isInitialized) {
+            return false
+        }
+        return when (navController.currentDestination?.id) {
+            R.id.nav_category,
+            R.id.categoryPickerFragment -> true
+            else -> false
+        }
     }
 
     /**

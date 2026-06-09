@@ -33,10 +33,12 @@ import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionE
 import com.example.itemmanagement.data.model.template.TemplateFieldDefaults
 import com.example.itemmanagement.data.repository.ItemTemplateRepository
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
+import com.example.itemmanagement.ui.categorypicker.CategoryPickerFragment
 import com.example.itemmanagement.ui.common.FieldProperties
 import com.example.itemmanagement.ui.common.ValidationType
 import com.example.itemmanagement.ui.template.TemplateSelectionBottomSheet
 import com.example.itemmanagement.ui.theme.LiquidGlassTheme
+import com.example.itemmanagement.utils.combineCategoryPath
 import com.example.itemmanagement.utils.SnackbarHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +91,7 @@ class AddItemFragment : Fragment() {
                         onPickPhoto = { checkAndRequestStoragePermission() },
                         onTakePhoto = { checkAndRequestCameraPermission() },
                         onRemovePhoto = { viewModel.removePhotoUri(it) },
+                        onShowCategoryPicker = { openCategoryPicker() },
                         onSave = { viewModel.performSave() }
                     )
                 }
@@ -100,6 +103,7 @@ class AddItemFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         configureActionBar()
         hideBottomNavigation()
+        observeCategoryPickerResult()
         observeViewModel()
         initializeScreen()
     }
@@ -107,10 +111,12 @@ class AddItemFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         hideBottomNavigation()
+        configureActionBar()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
+        configureActionBar()
         showBottomNavigation()
         restoreActionBar()
     }
@@ -140,6 +146,29 @@ class AddItemFragment : Fragment() {
             actionBar.setHomeAsUpIndicator(null)
             actionBar.title = ""
         }
+    }
+
+    private fun observeCategoryPickerResult() {
+        findNavController().currentBackStackEntry
+            ?.savedStateHandle
+            ?.getLiveData<String>(CategoryPickerFragment.RESULT_KEY)
+            ?.observe(viewLifecycleOwner) { selectedCategoryPath ->
+                if (selectedCategoryPath.isNullOrBlank()) {
+                    return@observe
+                }
+                viewModel.saveFieldValue("分类", selectedCategoryPath)
+                viewModel.clearFieldValue("子分类")
+                findNavController().currentBackStackEntry
+                    ?.savedStateHandle
+                    ?.remove<String>(CategoryPickerFragment.RESULT_KEY)
+            }
+    }
+
+    private fun openCategoryPicker() {
+        findNavController().navigate(
+            R.id.categoryPickerFragment,
+            CategoryPickerFragment.args(viewModel.getFieldValue("分类") as? String)
+        )
     }
 
     private fun initializeScreen() {
@@ -397,6 +426,7 @@ class AddItemFragment : Fragment() {
                         .split(",")
                         .map { it.trim() }
                         .filter { it.isNotEmpty() }
+                        .filterNot { it == "子分类" }
                         .forEach { fieldName ->
                             fields.add(
                                 Field(
@@ -495,17 +525,26 @@ class AddItemFragment : Fragment() {
 
     private fun applyTemplateDefaultValues(fieldDefaultsJson: String?) {
         val defaults = TemplateFieldDefaults.fromJson(fieldDefaultsJson) ?: return
-        var resolvedCategoryForContext: String? = null
+        val resolvedCategory = viewModel.resolveTemplateSingleValue("分类", defaults.singleValues["分类"])
+        val resolvedSubCategory = viewModel.resolveTemplateSingleValue(
+            "子分类",
+            defaults.singleValues["子分类"],
+            resolvedCategory
+        )
+        val combinedCategoryPath = combineCategoryPath(resolvedCategory, resolvedSubCategory)
+
+        if (combinedCategoryPath.isNotBlank()) {
+            viewModel.saveFieldValue("分类", combinedCategoryPath)
+            viewModel.clearFieldValue("子分类")
+        }
 
         defaults.singleValues.forEach { (field, value) ->
-            val contextKey = if (field == "子分类") resolvedCategoryForContext else null
-            val resolvedValue = viewModel.resolveTemplateSingleValue(field, value, contextKey)
+            if (field == "分类" || field == "子分类") {
+                return@forEach
+            }
+            val resolvedValue = viewModel.resolveTemplateSingleValue(field, value)
             if (!resolvedValue.isNullOrBlank()) {
                 viewModel.saveFieldValue(field, resolvedValue)
-                if (field == "分类") {
-                    resolvedCategoryForContext = resolvedValue
-                    viewModel.updateSubCategoryOptions(resolvedValue)
-                }
             }
         }
 
@@ -521,7 +560,7 @@ class AddItemFragment : Fragment() {
 
     private fun resolveFieldGroup(fieldName: String): String {
         return when (fieldName) {
-            "名称", "分类", "数量", "子分类", "品牌", "规格" -> "基础信息"
+            "名称", "分类", "数量", "品牌", "规格" -> "基础信息"
             "状态", "标签", "单价", "总价", "币种", "购买日期", "购买渠道", "商家名称",
             "备注", "位置", "地点", "序列号", "容量", "评分", "生产日期", "保质期",
             "保质过期时间", "保修期", "保修到期时间", "订阅制", "自动续费", "扣费周期",

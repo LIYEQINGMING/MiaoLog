@@ -28,6 +28,7 @@ import com.example.itemmanagement.data.entity.unified.ItemStatusDefinitionEntity
 import com.example.itemmanagement.data.entity.unified.ShoppingDetailEntity
 import com.example.itemmanagement.data.entity.unified.UnifiedItemEntity
 import com.example.itemmanagement.data.model.ItemStatus
+import com.example.itemmanagement.data.model.CategoryUsageSummary
 import com.example.itemmanagement.data.entity.BorrowStatus
 import com.example.itemmanagement.data.view.InventoryItemView
 import com.example.itemmanagement.data.view.ShoppingItemView
@@ -67,6 +68,9 @@ class UnifiedItemRepository(
     private val fieldCustomValueDao: FieldCustomValueDao,
     private val currencyConverter: com.example.itemmanagement.utils.CurrencyConverter
 ) {
+    companion object {
+        private const val CATEGORY_ICON_STORAGE_KEY = "meta:category_icons"
+    }
 
     private val gson = Gson()
     
@@ -409,6 +413,14 @@ class UnifiedItemRepository(
         persistCustomValues(optionKey(fieldName, contextKey), options)
     }
 
+    suspend fun getCategoryUsageSummaries(): List<CategoryUsageSummary> {
+        return unifiedItemDao.getCategoryUsageSummaries()
+    }
+
+    suspend fun updateCategoryPath(oldCategory: String, newCategory: String): Int {
+        return unifiedItemDao.updateCategory(oldCategory, newCategory)
+    }
+
     suspend fun clearStoredCustomOptions(fieldName: String, contextKey: String? = null) {
         fieldCustomValueDao.deleteByKey(optionKey(fieldName, contextKey))
     }
@@ -423,6 +435,33 @@ class UnifiedItemRepository(
 
     suspend fun clearStoredCustomUnits(fieldName: String) {
         fieldCustomValueDao.deleteByKey(unitKey(fieldName))
+    }
+
+    suspend fun getCategoryIconMap(): Map<String, String> {
+        return try {
+            val entity = fieldCustomValueDao.getByKey(CATEGORY_ICON_STORAGE_KEY) ?: return emptyMap()
+            val type = object : TypeToken<Map<String, String>>() {}.type
+            gson.fromJson<Map<String, String>>(entity.valuesJson, type) ?: emptyMap()
+        } catch (e: Exception) {
+            android.util.Log.e("UnifiedItemRepository", "读取分类图标失败", e)
+            emptyMap()
+        }
+    }
+
+    suspend fun saveCategoryIconMap(iconMap: Map<String, String>) {
+        try {
+            val json = gson.toJson(iconMap)
+            fieldCustomValueDao.upsert(
+                FieldCustomValueEntity(
+                    storageKey = CATEGORY_ICON_STORAGE_KEY,
+                    valuesJson = json,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("UnifiedItemRepository", "保存分类图标失败", e)
+            throw e
+        }
     }
 
     private suspend fun loadCustomValues(storageKey: String): List<String> {

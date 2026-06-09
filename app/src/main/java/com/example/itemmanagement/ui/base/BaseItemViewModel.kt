@@ -8,6 +8,15 @@ import com.example.itemmanagement.ui.base.FieldInteractionViewModel
 import com.example.itemmanagement.ui.common.FieldProperties
 import com.example.itemmanagement.ui.common.ValidationType  
 import com.example.itemmanagement.ui.common.DisplayStyle
+import com.example.itemmanagement.utils.DEFAULT_CATEGORY_ROOTS
+import com.example.itemmanagement.utils.DEFAULT_CATEGORY_SAMPLE_PATHS
+import com.example.itemmanagement.utils.categoryPathDisplayName
+import com.example.itemmanagement.utils.combineCategoryPath
+import com.example.itemmanagement.utils.defaultCategoryIcon
+import com.example.itemmanagement.utils.extractDeletedPathMarkers
+import com.example.itemmanagement.utils.extractEditedPathMarkers
+import com.example.itemmanagement.utils.normalizeCategoryPath
+import com.example.itemmanagement.utils.stripPathMarkers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -60,6 +69,7 @@ abstract class BaseItemViewModel(
     protected var customOptionsMap: MutableMap<String, MutableList<String>> = mutableMapOf()
     protected var customUnitsMap: MutableMap<String, MutableList<String>> = mutableMapOf()
     protected var customTagsMap: MutableMap<String, MutableList<String>> = mutableMapOf()
+    private var categoryIconMapCache: Map<String, String>? = null
 
     // 字段属性存储
     protected val fieldProperties = mutableMapOf<String, FieldProperties>()
@@ -530,6 +540,41 @@ abstract class BaseItemViewModel(
         if (options.remove(option)) {
             setCustomOptions(fieldName, options, contextKey)
         }
+    }
+
+    fun getAllKnownCategoryPaths(currentValue: String? = null): List<String> {
+        val rawCategoryOptions = getCustomOptions("分类").toList()
+        val deletedPaths = extractDeletedPathMarkers(rawCategoryOptions)
+        val editedPaths = extractEditedPathMarkers(rawCategoryOptions)
+        val storedCategoryPaths = stripPathMarkers(rawCategoryOptions)
+        val usagePaths = runBlocking {
+            repository.getCategoryUsageSummaries().map { normalizeCategoryPath(it.path) }
+        }
+
+        val rootCategories = DEFAULT_CATEGORY_ROOTS
+            .filterNot { deletedPaths.contains(it) }
+            .map { editedPaths[it] ?: it }
+
+        return (rootCategories + DEFAULT_CATEGORY_SAMPLE_PATHS + storedCategoryPaths + usagePaths + listOfNotNull(currentValue))
+            .map(::normalizeCategoryPath)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedWith(compareBy<String> { it.count { ch -> ch == '/' } }.thenBy { it })
+    }
+
+    fun getCategoryIconMapSnapshot(): Map<String, String> {
+        if (categoryIconMapCache == null) {
+            categoryIconMapCache = runBlocking {
+                repository.getCategoryIconMap().mapKeys { normalizeCategoryPath(it.key) }
+            }
+        }
+        return categoryIconMapCache.orEmpty()
+    }
+
+    fun getCategoryIcon(path: String): String {
+        val normalizedPath = normalizeCategoryPath(path)
+        return getCategoryIconMapSnapshot()[normalizedPath]
+            ?: defaultCategoryIcon(categoryPathDisplayName(normalizedPath))
     }
 
     // --- 生命周期管理 ---

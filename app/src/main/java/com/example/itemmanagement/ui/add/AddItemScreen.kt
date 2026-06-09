@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -34,7 +35,6 @@ import com.example.itemmanagement.data.entity.template.ItemTemplateEntity
 import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
 import com.example.itemmanagement.ui.components.GlassCard
 import com.example.itemmanagement.ui.components.ItemCategoryPickerRow
-import com.example.itemmanagement.ui.components.ItemCategoryPickerSheet
 import com.example.itemmanagement.ui.components.ItemCompactSelectRow
 import com.example.itemmanagement.ui.components.ItemCompactTextRow
 import com.example.itemmanagement.ui.components.ItemFieldPickerSheet
@@ -55,7 +55,7 @@ import java.util.Date
 import java.util.Locale
 
 private val BaseDefaultFields = listOf("名称", "分类", "数量")
-private val BaseOptionalFields = listOf("子分类", "品牌", "规格")
+private val BaseOptionalFields = listOf("品牌", "规格")
 private val SupplementDefaultFields = listOf("状态", "标签")
 private val SupplementOptionalFields = listOf(
     "单价",
@@ -98,6 +98,7 @@ fun AddItemScreen(
     onPickPhoto: () -> Unit,
     onTakePhoto: () -> Unit,
     onRemovePhoto: (Int) -> Unit,
+    onShowCategoryPicker: () -> Unit,
     onSave: () -> Unit
 ) {
     val fieldVersion by viewModel.fieldVersion.observeAsState(0)
@@ -106,7 +107,6 @@ fun AddItemScreen(
     val selectedTags by viewModel.selectedTags.observeAsState(emptyMap())
 
     val name = (viewModel.getFieldValue("名称") as? String).orEmpty()
-    val category = (viewModel.getFieldValue("分类") as? String).orEmpty()
     val selectedFieldNames = remember(selectedFields) { selectedFields.map { it.name }.toSet() }
     val templateLockedFields = remember(selectedTemplate, customAttributeDefinitions) {
         buildTemplateLockedFields(selectedTemplate, customAttributeDefinitions)
@@ -167,10 +167,10 @@ fun AddItemScreen(
         baseSection = {
             BaseFieldsContent(
                 viewModel = viewModel,
-                category = category,
                 visibleFields = baseFields,
                 lockedFields = templateLockedFields,
-                onDeleteField = { pendingDeleteField = it }
+                onDeleteField = { pendingDeleteField = it },
+                onShowCategoryPicker = onShowCategoryPicker
             )
             ItemSectionAddButton(
                 enabled = availableBaseFields.isNotEmpty(),
@@ -312,12 +312,13 @@ private fun TemplateHeaderCard(
 @Composable
 private fun BaseFieldsContent(
     viewModel: AddItemViewModel,
-    category: String,
     visibleFields: List<String>,
     lockedFields: Set<String>,
-    onDeleteField: (String) -> Unit
+    onDeleteField: (String) -> Unit,
+    onShowCategoryPicker: () -> Unit
 ) {
-    var showCategorySheet by rememberSaveable { mutableStateOf(false) }
+    val categoryPath = (viewModel.getFieldValue("分类") as? String).orEmpty()
+    val categoryIcon = remember(categoryPath) { viewModel.getCategoryIcon(categoryPath) }
 
     ItemCompactTextRow(
         label = "名称",
@@ -329,8 +330,9 @@ private fun BaseFieldsContent(
 
     ItemCategoryPickerRow(
         label = "分类",
-        value = (viewModel.getFieldValue("分类") as? String).orEmpty(),
-        onClick = { showCategorySheet = true }
+        value = categoryPath,
+        iconText = categoryIcon,
+        onClick = onShowCategoryPicker
     )
 
     ItemQuantityRow(
@@ -344,22 +346,6 @@ private fun BaseFieldsContent(
         .filterNot { it in BaseDefaultFields }
         .forEach { fieldName ->
             when (fieldName) {
-                "子分类" -> {
-                    if (category.isNotBlank()) {
-                        BaseOptionalFieldItem(
-                            locked = fieldName in lockedFields,
-                            onDelete = { onDeleteField(fieldName) }
-                        ) {
-                            ItemCompactSelectRow(
-                                label = "子分类",
-                                value = (viewModel.getFieldValue("子分类") as? String).orEmpty(),
-                                placeholder = "选择子分类",
-                                options = viewModel.getSubCategoriesForCategory(category),
-                                onValueSelected = { viewModel.saveFieldValue("子分类", it) }
-                            )
-                        }
-                    }
-                }
                 "品牌", "规格" -> {
                     BaseOptionalFieldItem(
                         locked = fieldName in lockedFields,
@@ -376,24 +362,6 @@ private fun BaseFieldsContent(
             }
         }
 
-    if (showCategorySheet) {
-        ItemCategoryPickerSheet(
-            currentValue = (viewModel.getFieldValue("分类") as? String).orEmpty(),
-            options = (viewModel.getFieldProperties("分类").options.orEmpty() + viewModel.getCustomOptions("分类")).distinct(),
-            onDismiss = { showCategorySheet = false },
-            onCreateCategory = { newCategory ->
-                viewModel.addCustomOption("分类", newCategory)
-                viewModel.saveFieldValue("分类", newCategory)
-                viewModel.updateSubCategoryOptions(newCategory)
-                showCategorySheet = false
-            },
-            onSelectCategory = { selectedCategory ->
-                viewModel.saveFieldValue("分类", selectedCategory)
-                viewModel.updateSubCategoryOptions(selectedCategory)
-                showCategorySheet = false
-            }
-        )
-    }
 }
 
 private fun buildSupplementFields(

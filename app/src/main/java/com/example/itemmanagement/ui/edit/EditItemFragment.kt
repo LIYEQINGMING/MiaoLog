@@ -29,6 +29,7 @@ import com.example.itemmanagement.ItemManagementApplication
 import com.example.itemmanagement.R
 import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
+import com.example.itemmanagement.ui.categorypicker.CategoryPickerFragment
 import com.example.itemmanagement.ui.theme.LiquidGlassTheme
 import com.example.itemmanagement.utils.SnackbarHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -73,6 +74,7 @@ class EditItemFragment : Fragment() {
                         onPickPhoto = { checkAndRequestStoragePermission() },
                         onTakePhoto = { checkAndRequestCameraPermission() },
                         onRemovePhoto = { viewModel.removePhotoUri(it) },
+                        onShowCategoryPicker = { openCategoryPicker() },
                         onNavigateBack = { handleNavigateBack() },
                         onRequestDelete = { showDeleteConfirmDialog() },
                         onSave = { viewModel.performSave() }
@@ -86,6 +88,7 @@ class EditItemFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         hideBottomNavigation()
         hideActionBar()
+        observeCategoryPickerResult()
         observeViewModel()
         loadCustomAttributeDefinitions()
     }
@@ -128,6 +131,29 @@ class EditItemFragment : Fragment() {
                 viewModel.onDeleteResultConsumed()
             }
         }
+    }
+
+    private fun observeCategoryPickerResult() {
+        findNavController().currentBackStackEntry
+            ?.savedStateHandle
+            ?.getLiveData<String>(CategoryPickerFragment.RESULT_KEY)
+            ?.observe(viewLifecycleOwner) { selectedCategoryPath ->
+                if (selectedCategoryPath.isNullOrBlank()) {
+                    return@observe
+                }
+                viewModel.saveFieldValue("分类", selectedCategoryPath)
+                viewModel.clearFieldValue("子分类")
+                findNavController().currentBackStackEntry
+                    ?.savedStateHandle
+                    ?.remove<String>(CategoryPickerFragment.RESULT_KEY)
+            }
+    }
+
+    private fun openCategoryPicker() {
+        findNavController().navigate(
+            R.id.categoryPickerFragment,
+            CategoryPickerFragment.args(viewModel.getFieldValue("分类") as? String)
+        )
     }
 
     private fun loadCustomAttributeDefinitions() {

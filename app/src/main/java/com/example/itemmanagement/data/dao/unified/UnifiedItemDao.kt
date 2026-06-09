@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Delete
 import com.example.itemmanagement.data.entity.unified.UnifiedItemEntity
+import com.example.itemmanagement.data.model.CategoryUsageSummary
 import kotlinx.coroutines.flow.Flow
 import java.util.Date
 
@@ -59,6 +60,15 @@ interface UnifiedItemDao {
     
     @Query("SELECT DISTINCT category FROM unified_items ORDER BY category ASC")
     suspend fun getAllCategories(): List<String>
+
+    @Query("""
+        SELECT category AS path, COUNT(*) AS itemCount
+        FROM unified_items
+        WHERE category IS NOT NULL AND category != ''
+        GROUP BY category
+        ORDER BY category ASC
+    """)
+    suspend fun getCategoryUsageSummaries(): List<CategoryUsageSummary>
     
     @Query("SELECT DISTINCT subCategory FROM unified_items WHERE category = :category AND subCategory IS NOT NULL ORDER BY subCategory ASC")
     suspend fun getSubCategories(category: String): List<String>
