@@ -60,10 +60,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.itemmanagement.ui.components.IconSource
+import com.example.itemmanagement.ui.components.MiaoIcon
+import com.example.itemmanagement.ui.components.MiaoIconPickerSheet
 import com.example.itemmanagement.ui.main.LiquidBackground
 import com.example.itemmanagement.ui.components.GlassCard
 import com.example.itemmanagement.ui.theme.LiquidGlassTheme
-import com.example.itemmanagement.utils.DEFAULT_CATEGORY_ICONS
 import com.example.itemmanagement.utils.buildCategoryChildNodes
 import com.example.itemmanagement.utils.categoryPathDisplayName
 import com.example.itemmanagement.utils.categoryPathParent
@@ -533,8 +536,8 @@ private fun CategoryEntryCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)) {
-                    Text(
-                        text = entry.icon,
+                    MiaoIcon(
+                        icon = entry.icon,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
@@ -626,8 +629,8 @@ private fun CategorySearchCard(
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)) {
-                    Text(
-                        text = entry.icon,
+                    MiaoIcon(
+                        icon = entry.icon,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
@@ -682,6 +685,7 @@ private fun CategoryEditorDialog(
 ) {
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
     var selectedIcon by rememberSaveable(initialIcon) { mutableStateOf(initialIcon.ifBlank { defaultCategoryIcon(initialName) }) }
+    var showIconPicker by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -695,25 +699,45 @@ private fun CategoryEditorDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
+                
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("请输入分类名称") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp)
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    DEFAULT_CATEGORY_ICONS.forEach { icon ->
-                        FilterChip(
-                            selected = selectedIcon == icon,
-                            onClick = { selectedIcon = icon },
-                            label = { Text(icon) }
-                        )
+                    Surface(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clickable { showIconPicker = true },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    ) {
+                        MiaoIcon(icon = selectedIcon, fontSize = 32.sp)
                     }
+                    
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { 
+                            name = it
+                            if (selectedIcon == defaultCategoryIcon("")) {
+                                selectedIcon = defaultCategoryIcon(it)
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("请输入分类名称") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                }
+
+                TextButton(
+                    onClick = { showIconPicker = true },
+                    modifier = Modifier.align(Alignment.Start)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("选择图标")
                 }
             }
         },
@@ -730,4 +754,19 @@ private fun CategoryEditorDialog(
             }
         }
     )
+
+    if (showIconPicker) {
+        MiaoIconPickerSheet(
+            initialIcon = IconSource.fromPersistString(selectedIcon),
+            onDismiss = { showIconPicker = false },
+            onIconSelected = { iconSource ->
+                if (iconSource is IconSource.Emoji) {
+                    selectedIcon = iconSource.code
+                } else if (iconSource is IconSource.None) {
+                    selectedIcon = defaultCategoryIcon(name)
+                }
+                showIconPicker = false
+            }
+        )
+    }
 }

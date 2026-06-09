@@ -88,6 +88,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
 import com.example.itemmanagement.data.model.PriceActionConfig
@@ -992,14 +993,14 @@ private fun ItemCategoryPickerEntryCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                    ) {
-                        Text(
-                            text = icon,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
-                    }
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        ) {
+                            MiaoIcon(
+                                icon = icon,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1100,8 +1101,8 @@ private fun ItemCategoryPickerSearchResultCard(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                         ) {
-                            Text(
-                                text = icon,
+                            MiaoIcon(
+                                icon = icon,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
@@ -1217,6 +1218,7 @@ private fun ItemCategoryCreateDialog(
 ) {
     var name by rememberSaveable { mutableStateOf("") }
     var selectedIcon by rememberSaveable("") { mutableStateOf(defaultCategoryIcon("")) }
+    var showIconPicker by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1230,31 +1232,45 @@ private fun ItemCategoryCreateDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { 
-                        name = it
-                        if (selectedIcon == defaultCategoryIcon("")) {
-                            selectedIcon = defaultCategoryIcon(it)
-                        }
-                    },
+                
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("请输入分类名称") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(18.dp)
-                )
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    com.example.itemmanagement.utils.DEFAULT_CATEGORY_ICONS.forEach { icon ->
-                        FilterChip(
-                            selected = selectedIcon == icon,
-                            onClick = { selectedIcon = icon },
-                            label = { Text(icon) }
-                        )
+                    Surface(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clickable { showIconPicker = true },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    ) {
+                        MiaoIcon(icon = selectedIcon, fontSize = 32.sp)
                     }
+                    
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { 
+                            name = it
+                            if (selectedIcon == defaultCategoryIcon("")) {
+                                selectedIcon = defaultCategoryIcon(it)
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("请输入分类名称") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                }
+
+                TextButton(
+                    onClick = { showIconPicker = true },
+                    modifier = Modifier.align(Alignment.Start)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("选择图标")
                 }
             }
         },
@@ -1272,6 +1288,21 @@ private fun ItemCategoryCreateDialog(
             }
         }
     )
+
+    if (showIconPicker) {
+        MiaoIconPickerSheet(
+            initialIcon = IconSource.fromPersistString(selectedIcon),
+            onDismiss = { showIconPicker = false },
+            onIconSelected = { iconSource ->
+                if (iconSource is IconSource.Emoji) {
+                    selectedIcon = iconSource.code
+                } else if (iconSource is IconSource.None) {
+                    selectedIcon = defaultCategoryIcon(name)
+                }
+                showIconPicker = false
+            }
+        )
+    }
 }
 
 @Composable
