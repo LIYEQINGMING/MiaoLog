@@ -215,10 +215,13 @@ class MainActivity : AppCompatActivity() {
                                 val bundle = androidx.core.os.bundleOf("templateId" to defaultTemplateId)
                                 navController.navigate(R.id.addItemFragment, bundle)
                             } else {
-                                // 使用标准行为
+                                // 检查是否正在切换到“我的”标签页
+                                val isSwitchingToProfile = destId == R.id.navigation_profile
+                                
+                                // 使用标准行为，但对于“我的”标签页，如果当前正在展示分类管理等子页面，则重置到首页
                                 val options = androidx.navigation.NavOptions.Builder()
                                     .setLaunchSingleTop(true)
-                                    .setRestoreState(true)
+                                    .setRestoreState(!isSwitchingToProfile) // 如果是切换到“我的”，则不恢复状态，确保进入“我的”主页
                                     .setPopUpTo(navController.graph.startDestinationId, false, true)
                                     .build()
                                 navController.navigate(destId, null, options)
@@ -268,7 +271,17 @@ class MainActivity : AppCompatActivity() {
         var previousDestinationId: Int? = null
         
         navController.addOnDestinationChangedListener { _, destination, _ ->
-            binding.navView.visibility = View.VISIBLE
+            // 默认显示底部导航，除非是特定页面
+            binding.navView.visibility = when (destination.id) {
+                R.id.addItemFragment,
+                R.id.editItemFragment,
+                R.id.nav_category,
+                R.id.categoryPickerFragment,
+                R.id.navigation_item_detail,
+                R.id.navigation_map_picker,
+                R.id.navigation_map_viewer -> View.GONE
+                else -> View.VISIBLE
+            }
 
             currentNavSelection = resolveBottomNavSelection(destination.id)
 
@@ -354,7 +367,8 @@ class MainActivity : AppCompatActivity() {
             R.id.navigation_edit_profile,
             R.id.navigation_recycle_bin,
             R.id.navigation_donation,
-            R.id.navigation_about_app -> R.id.navigation_profile
+            R.id.navigation_about_app,
+            R.id.nav_category -> R.id.navigation_profile
 
             else -> currentNavSelection
         }

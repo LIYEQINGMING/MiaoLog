@@ -45,9 +45,10 @@ class CategoryPickerFragment : Fragment() {
                         options = uiState.options,
                         iconMap = uiState.iconMap,
                         onDismiss = { findNavController().navigateUp() },
-                        onCreateCategory = { path ->
-                            viewModel.createCategory(path) { createdPath ->
-                                deliverResult(createdPath)
+                        onCreateCategory = { path, icon ->
+                            viewModel.createCategory(path, icon) { _ ->
+                                // 仅创建分类并刷新列表，不自动选定退出
+                                // ViewModel.createCategory 内部已经调用了 refresh()
                             }
                         },
                         onSelectCategory = { path ->

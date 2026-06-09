@@ -33,7 +33,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -68,11 +67,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -532,7 +534,7 @@ fun ItemCategoryPickerSheet(
     options: List<String>,
     iconMap: Map<String, String> = emptyMap(),
     onDismiss: () -> Unit,
-    onCreateCategory: (String) -> Unit,
+    onCreateCategory: (String, String) -> Unit,
     onSelectCategory: (String) -> Unit
 ) {
     val normalizedCurrentValue = remember(currentValue) { normalizeCategoryPath(currentValue) }
@@ -556,6 +558,10 @@ fun ItemCategoryPickerSheet(
     var selectedPath by rememberSaveable(normalizedCurrentValue) { mutableStateOf(normalizedCurrentValue) }
     var createParentPath by rememberSaveable(normalizedCurrentValue) { mutableStateOf(browsingPath) }
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
+    var lastCreatedPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var shouldScrollToNew by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
     val searchResults = remember(searchQuery, normalizedOptions) {
         val keyword = searchQuery.trim()
         if (keyword.isBlank()) {
@@ -573,6 +579,26 @@ fun ItemCategoryPickerSheet(
     val pathSegments = remember(browsingPath) { splitCategoryPath(browsingPath) }
     val isSearching = searchQuery.trim().isNotBlank()
     val density = LocalDensity.current
+
+    // 处理新建分类后的自动滚动
+    LaunchedEffect(options) {
+        val targetPath = lastCreatedPath
+        if (targetPath != null && options.contains(targetPath)) {
+            // 确定它在当前显示的列表中
+            val indexInList = if (!isSearching) {
+                childNodes.indexOfFirst { it.path == targetPath }
+            } else {
+                searchResults.indexOfFirst { it == targetPath }
+            }
+
+            if (indexInList != -1) {
+                delay(100)
+                listState.animateScrollToItem(indexInList)
+                lastCreatedPath = null
+                shouldScrollToNew = false
+            }
+        }
+    }
 
     BackHandler {
         when {
@@ -601,12 +627,14 @@ fun ItemCategoryPickerSheet(
                 },
                 onCreateCategory = {
                     createParentPath = browsingPath
+                    shouldScrollToNew = true // 仅右上角按钮触发滚动
                     showCreateDialog = true
                 }
             )
 
             Box(modifier = Modifier.weight(1f)) {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 16.dp,
@@ -759,12 +787,15 @@ fun ItemCategoryPickerSheet(
         ItemCategoryCreateDialog(
             parentPath = createParentPath,
             onDismiss = { showCreateDialog = false },
-            onConfirm = { name ->
+            onConfirm = { name, icon ->
                 val createdPath = joinCategoryPath(createParentPath, name)
                 if (createdPath.isNotBlank()) {
-                    onCreateCategory(createdPath)
+                    if (shouldScrollToNew) {
+                        lastCreatedPath = createdPath
+                    }
+                    onCreateCategory(createdPath, icon)
                     browsingPath = createParentPath
-                    selectedPath = createdPath
+                    // 仅新建，不自动选定
                     showCreateDialog = false
                 }
             }
@@ -1177,19 +1208,21 @@ private fun ItemCategoryPickerBottomBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ItemCategoryCreateDialog(
     parentPath: String,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String, String) -> Unit
 ) {
     var name by rememberSaveable { mutableStateOf("") }
+    var selectedIcon by rememberSaveable("") { mutableStateOf(defaultCategoryIcon("")) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (parentPath.isBlank()) "新建分类" else "新建子分类") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (parentPath.isNotBlank()) {
                     Text(
                         text = "当前层级：$parentPath",
@@ -1199,18 +1232,36 @@ private fun ItemCategoryCreateDialog(
                 }
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { 
+                        name = it
+                        if (selectedIcon == defaultCategoryIcon("")) {
+                            selectedIcon = defaultCategoryIcon(it)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("请输入分类名称") },
                     singleLine = true,
                     shape = RoundedCornerShape(18.dp)
                 )
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    com.example.itemmanagement.utils.DEFAULT_CATEGORY_ICONS.forEach { icon ->
+                        FilterChip(
+                            selected = selectedIcon == icon,
+                            onClick = { selectedIcon = icon },
+                            label = { Text(icon) }
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = name.trim().isNotEmpty(),
-                onClick = { onConfirm(name.trim()) }
+                onClick = { onConfirm(name.trim(), selectedIcon) }
             ) {
                 Text("确认")
             }

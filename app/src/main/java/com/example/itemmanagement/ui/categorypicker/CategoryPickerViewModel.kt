@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.itemmanagement.data.repository.UnifiedItemRepository
+import com.example.itemmanagement.utils.DEFAULT_CATEGORY_ICONS
 import com.example.itemmanagement.utils.DEFAULT_CATEGORY_ROOTS
 import com.example.itemmanagement.utils.DEFAULT_CATEGORY_SAMPLE_PATHS
 import com.example.itemmanagement.utils.categoryPathDisplayName
@@ -68,7 +69,7 @@ class CategoryPickerViewModel(
         }
     }
 
-    fun createCategory(path: String, onCreated: (String) -> Unit) {
+    fun createCategory(path: String, icon: String? = null, onCreated: (String) -> Unit) {
         val normalizedPath = normalizeCategoryPath(path)
         if (normalizedPath.isBlank()) return
 
@@ -80,8 +81,8 @@ class CategoryPickerViewModel(
             }
 
             val currentIcons = repository.getCategoryIconMap().toMutableMap()
-            if (!currentIcons.containsKey(normalizedPath)) {
-                currentIcons[normalizedPath] = defaultCategoryIcon(categoryPathDisplayName(normalizedPath))
+            if (!currentIcons.containsKey(normalizedPath) || icon != null) {
+                currentIcons[normalizedPath] = icon ?: defaultCategoryIcon(categoryPathDisplayName(normalizedPath))
                 repository.saveCategoryIconMap(currentIcons)
             }
 

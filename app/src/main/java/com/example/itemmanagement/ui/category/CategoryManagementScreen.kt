@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -53,11 +54,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.itemmanagement.ui.main.LiquidBackground
 import com.example.itemmanagement.ui.components.GlassCard
 import com.example.itemmanagement.ui.theme.LiquidGlassTheme
 import com.example.itemmanagement.utils.DEFAULT_CATEGORY_ICONS
@@ -82,6 +85,7 @@ private sealed interface CategoryDialogState {
         val parentPath: String,
         val initialName: String = "",
         val initialIcon: String = "",
+        val shouldScroll: Boolean = false,
     ) : CategoryDialogState
 
     data class Rename(
@@ -110,6 +114,8 @@ fun CategoryManagementScreen(
     var currentPath by rememberSaveable { mutableStateOf("") }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var dialogState by remember { mutableStateOf<CategoryDialogState?>(null) }
+    var lastCreatedPath by rememberSaveable { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     val normalizedSearchQuery = searchQuery.trim()
 
@@ -164,6 +170,26 @@ fun CategoryManagementScreen(
         }
     }
 
+    // 处理新建分类后的自动滚动
+    LaunchedEffect(uiState.allPaths) {
+        val targetPath = lastCreatedPath
+        if (targetPath != null && uiState.allPaths.contains(targetPath)) {
+            // 确保在当前显示的列表中找到它
+            val indexInList = if (normalizedSearchQuery.isBlank()) {
+                childEntries.indexOfFirst { it.path == targetPath }
+            } else {
+                searchResults.indexOfFirst { it.path == targetPath }
+            }
+
+            if (indexInList != -1) {
+                // 延迟一小会儿等待 UI 渲染完成
+                delay(100)
+                listState.animateScrollToItem(indexInList)
+                lastCreatedPath = null
+            }
+        }
+    }
+
     BackHandler {
         when {
             dialogState != null -> dialogState = null
@@ -173,114 +199,116 @@ fun CategoryManagementScreen(
     }
 
     LiquidGlassTheme {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.surfaceContainerLowest
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    CategoryManagementHeader(
-                        currentPath = normalizedCurrentPath,
-                        searchQuery = searchQuery,
-                        onSearchQueryChange = { searchQuery = it },
-                        onPathSelected = { currentPath = it },
-                        onClose = onClose,
-                        onCreateCategory = {
-                            dialogState = CategoryDialogState.Create(parentPath = normalizedCurrentPath)
-                        }
-                    )
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 使用统一的液态背景
+            LiquidBackground(modifier = Modifier.fillMaxSize())
 
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (uiState.isLoading) {
-                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(
-                                    start = 16.dp,
-                                    end = 16.dp,
-                                    top = 18.dp,
-                                    bottom = 24.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
-                                ),
-                                verticalArrangement = Arrangement.spacedBy(14.dp),
-                            ) {
-                                if (normalizedSearchQuery.isBlank()) {
-                                    if (childEntries.isEmpty()) {
-                                        item {
-                                            CategoryEmptyCard(
-                                                title = if (normalizedCurrentPath.isBlank()) "还没有可浏览的分类" else "当前分类下还没有子分类",
-                                                description = if (normalizedCurrentPath.isBlank()) {
-                                                    "可以先创建一级分类，也可以继续使用默认分类。"
-                                                } else {
-                                                    "可以在当前层级继续新建子分类，或者将当前节点直接用于物品分类。"
-                                                }
-                                            )
-                                        }
-                                    } else {
-                                        items(childEntries, key = { it.path }) { entry ->
-                                            CategoryEntryCard(
-                                                entry = entry,
-                                                onOpen = {
-                                                    if (entry.hasChildren) {
-                                                        currentPath = entry.path
-                                                    }
-                                                },
-                                                onRename = {
-                                                    dialogState = CategoryDialogState.Rename(
-                                                        path = entry.path,
-                                                        initialName = entry.name,
-                                                        initialIcon = entry.icon,
-                                                    )
-                                                },
-                                                onCreateChild = {
-                                                    dialogState = CategoryDialogState.Create(parentPath = entry.path)
-                                                },
-                                                onDelete = {
-                                                    dialogState = CategoryDialogState.Delete(
-                                                        path = entry.path,
-                                                        hasChildren = entry.hasChildren,
-                                                        itemCount = entry.itemCount,
-                                                    )
-                                                }
-                                            )
-                                        }
+            Column(modifier = Modifier.fillMaxSize()) {
+                CategoryManagementHeader(
+                    currentPath = normalizedCurrentPath,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    onPathSelected = { currentPath = it },
+                    onClose = onClose,
+                    onCreateCategory = {
+                        dialogState = CategoryDialogState.Create(
+                            parentPath = normalizedCurrentPath,
+                            shouldScroll = true // 仅右上角新建按钮触发滚动
+                        )
+                    }
+                )
+
+                Box(modifier = Modifier.weight(1f)) {
+                    if (uiState.isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = 16.dp,
+                                end = 16.dp,
+                                top = 18.dp,
+                                bottom = 24.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            if (normalizedSearchQuery.isBlank()) {
+                                if (childEntries.isEmpty()) {
+                                    item {
+                                        CategoryEmptyCard(
+                                            title = if (normalizedCurrentPath.isBlank()) "还没有可浏览的分类" else "当前分类下还没有子分类",
+                                            description = if (normalizedCurrentPath.isBlank()) {
+                                                "可以先创建一级分类，也可以继续使用默认分类。"
+                                            } else {
+                                                "可以在当前层级继续新建子分类，或者将当前节点直接用于物品分类。"
+                                            }
+                                        )
                                     }
                                 } else {
-                                    if (searchResults.isEmpty()) {
-                                        item {
-                                            CategoryEmptyCard(
-                                                title = "没有找到匹配分类",
-                                                description = "可以切换到当前层级后直接新建，或调整关键词继续搜索。"
-                                            )
-                                        }
-                                    } else {
-                                        items(searchResults, key = { it.path }) { entry ->
-                                            CategorySearchCard(
-                                                entry = entry,
-                                                onOpen = {
+                                    items(childEntries, key = { it.path }) { entry ->
+                                        CategoryEntryCard(
+                                            entry = entry,
+                                            onOpen = {
+                                                if (entry.hasChildren) {
                                                     currentPath = entry.path
-                                                    searchQuery = ""
                                                 }
-                                            )
-                                        }
+                                            },
+                                            onRename = {
+                                                dialogState = CategoryDialogState.Rename(
+                                                    path = entry.path,
+                                                    initialName = entry.name,
+                                                    initialIcon = entry.icon,
+                                                )
+                                            },
+                                            onCreateChild = {
+                                                dialogState = CategoryDialogState.Create(parentPath = entry.path)
+                                            },
+                                            onDelete = {
+                                                dialogState = CategoryDialogState.Delete(
+                                                    path = entry.path,
+                                                    hasChildren = entry.hasChildren,
+                                                    itemCount = entry.itemCount,
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                            } else {
+                                if (searchResults.isEmpty()) {
+                                    item {
+                                        CategoryEmptyCard(
+                                            title = "没有找到匹配分类",
+                                            description = "可以切换到当前层级后直接新建，或调整关键词继续搜索。"
+                                        )
+                                    }
+                                } else {
+                                    items(searchResults, key = { it.path }) { entry ->
+                                        CategorySearchCard(
+                                            entry = entry,
+                                            onOpen = {
+                                                currentPath = entry.path
+                                                searchQuery = ""
+                                            }
+                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
-
-                SnackbarHost(
-                    hostState = snackbarHostState,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(
-                            start = 16.dp,
-                            end = 16.dp,
-                            bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                        )
-                )
             }
+
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                    )
+            )
         }
     }
 
@@ -293,6 +321,9 @@ fun CategoryManagementScreen(
                 parentPath = activeDialog.parentPath,
                 onDismiss = { dialogState = null },
                 onConfirm = { name, icon ->
+                    if (activeDialog.shouldScroll) {
+                        lastCreatedPath = if (activeDialog.parentPath.isBlank()) name else "${activeDialog.parentPath} / $name"
+                    }
                     onCreateCategory(activeDialog.parentPath, name, icon)
                     dialogState = null
                 }
@@ -359,80 +390,88 @@ private fun CategoryManagementHeader(
     onCreateCategory: () -> Unit,
 ) {
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val headerTopPadding = (statusBarTopPadding - 8.dp).coerceAtLeast(0.dp)
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        tonalElevation = 3.dp
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                top = headerTopPadding,
+                start = 16.dp,
+                end = 16.dp,
+                bottom = 12.dp
+            ),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    top = statusBarTopPadding + 6.dp,
-                    start = 16.dp,
-                    end = 16.dp,
-                    bottom = 18.dp
-                ),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            blurRadius = 28.dp,
+            contentPadding = 10.dp
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    modifier = Modifier.size(40.dp),
-                    onClick = onClose
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    IconButton(
+                        modifier = Modifier.size(36.dp),
+                        onClick = onClose
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "分类管理",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(
+                        modifier = Modifier.size(36.dp),
+                        onClick = onCreateCategory
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "新建分类")
+                    }
                 }
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "分类管理",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                IconButton(
-                    modifier = Modifier.size(40.dp),
-                    onClick = onCreateCategory
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "新建分类")
-                }
-            }
 
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                placeholder = { Text("输入关键词") },
-                singleLine = true,
-                shape = RoundedCornerShape(20.dp)
-            )
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    CategoryPathChips(
-                        currentPath = currentPath,
-                        onPathSelected = onPathSelected
-                    )
-                }
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    placeholder = { Text("输入关键词") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(20.dp)
+                )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
         }
+
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            blurRadius = 24.dp,
+            contentPadding = 14.dp
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                CategoryPathChips(
+                    currentPath = currentPath,
+                    onPathSelected = onPathSelected
+                )
+                if (currentPath.isNotBlank()) {
+                    Text(
+                        text = "当前路径：$currentPath",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     }
 }
 
