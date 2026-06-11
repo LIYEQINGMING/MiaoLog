@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -1220,88 +1221,89 @@ private fun ItemCategoryCreateDialog(
     var selectedIcon by rememberSaveable("") { mutableStateOf(defaultCategoryIcon("")) }
     var showIconPicker by remember { mutableStateOf(false) }
 
-    AlertDialog(
+    MiaoCompactDialog(
+        title = if (parentPath.isBlank()) "新建分类" else "新建子分类",
         onDismissRequest = onDismiss,
-        title = { Text(if (parentPath.isBlank()) "新建分类" else "新建子分类") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (parentPath.isNotBlank()) {
-                    Text(
-                        text = "当前层级：$parentPath",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Surface(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clickable { showIconPicker = true },
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                    ) {
-                        MiaoIcon(icon = selectedIcon, fontSize = 32.sp)
-                    }
-                    
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { 
-                            name = it
-                            if (selectedIcon == defaultCategoryIcon("")) {
-                                selectedIcon = defaultCategoryIcon(it)
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("请输入分类名称") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                }
+        onConfirm = { onConfirm(name.trim(), selectedIcon) },
+        confirmText = "确认",
+        dismissText = "取消",
+        confirmEnabled = name.trim().isNotEmpty()
+    ) {
+        if (parentPath.isNotBlank()) {
+            Text(
+                text = "当前层级：$parentPath",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
 
-                TextButton(
-                    onClick = { showIconPicker = true },
-                    modifier = Modifier.align(Alignment.Start)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("选择图标")
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = name.trim().isNotEmpty(),
-                onClick = { onConfirm(name.trim(), selectedIcon) }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .size(54.dp)
+                    .clickable { showIconPicker = true },
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
             ) {
-                Text("确认")
+                MiaoIcon(icon = selectedIcon, fontSize = 26.sp)
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    name = it
+                    if (selectedIcon == defaultCategoryIcon("")) {
+                        selectedIcon = defaultCategoryIcon(it)
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(54.dp),
+                placeholder = {
+                    Text(
+                        text = "请输入分类名称",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+        }
+
+        if (showIconPicker) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 260.dp, max = 320.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                MiaoIconPickerPanel(
+                    initialIcon = IconSource.fromPersistString(selectedIcon),
+                    modifier = Modifier.fillMaxSize(),
+                    onIconSelected = { iconSource ->
+                        if (iconSource is IconSource.Emoji) {
+                            selectedIcon = iconSource.code
+                        } else if (iconSource is IconSource.None) {
+                            selectedIcon = defaultCategoryIcon(name)
+                        }
+                        showIconPicker = false
+                    },
+                    onRemove = {
+                        selectedIcon = defaultCategoryIcon(name)
+                        showIconPicker = false
+                    },
+                    embedded = true
+                )
             }
         }
-    )
-
-    if (showIconPicker) {
-        MiaoIconPickerSheet(
-            initialIcon = IconSource.fromPersistString(selectedIcon),
-            onDismiss = { showIconPicker = false },
-            onIconSelected = { iconSource ->
-                if (iconSource is IconSource.Emoji) {
-                    selectedIcon = iconSource.code
-                } else if (iconSource is IconSource.None) {
-                    selectedIcon = defaultCategoryIcon(name)
-                }
-                showIconPicker = false
-            }
-        )
     }
 }
 
