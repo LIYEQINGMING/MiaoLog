@@ -759,10 +759,11 @@ private fun CategoryEditorDialog(
                     initialIcon = IconSource.fromPersistString(selectedIcon),
                     modifier = Modifier.fillMaxSize(),
                     onIconSelected = { iconSource ->
-                        if (iconSource is IconSource.Emoji) {
-                            selectedIcon = iconSource.code
-                        } else if (iconSource is IconSource.None) {
-                            selectedIcon = defaultCategoryIcon(name)
+                        selectedIcon = when (iconSource) {
+                            is IconSource.Emoji -> iconSource.code
+                            is IconSource.Vector,
+                            is IconSource.Custom -> iconSource.toPersistString()
+                            IconSource.None -> defaultCategoryIcon(name)
                         }
                         showIconPicker = false
                     },

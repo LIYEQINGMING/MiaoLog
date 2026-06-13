@@ -1,5 +1,153 @@
 # 系统级通用图标选择器开发文档 (Universal Icon Picker Development)
-# 20260611 13:054第七轮开发
+# 
+
+# 20260612 11:05 第十一轮开发 MS 图标导航栏以及导航栏和图标显示区域联动
+已完成
+
+- 这轮我只专注在 ms 图标 部分，没有动 emoji 分页。
+- 已实现 Material Symbols 图标分页的底部分类导航栏，并支持“点击跳转 + 滚动联动高亮 + fill 状态高亮”。
+- 也修复了“新建分类 / 编辑分类 / 新建子分类”里点选 ms 图标后没有正确回填到上方预览位的问题。
+改动点
+
+- 在 MiaoIconPicker.kt 里：
+- 给 MaterialSymbolPickerContent() 加了底部导航栏
+- 导航栏使用的是 ms 图标，不是文字
+- 点击导航图标会滚动到对应官方分类
+- 手动滚动图标网格时，会根据当前可视区域反向更新导航高亮
+- 当前分类导航图标会进入 fill 状态，和你说的“当前位置 = 导航高亮状态”一致
+- 在 IconPickerModels.kt 和 IconPickerModels.kt 里：
+- 增加了 MATERIAL_SYMBOL_NAV_ITEMS
+- 给每个官方分类指定了一枚更合适的 ms 导航图标
+- 继续复用了之前已经接好的 FILL / wght / GRAD / opsz 轴能力，导航高亮时直接走 fill 态
+- 在 CategoryManagementScreen.kt 和 ItemFormComponents.kt 里：
+- 把图标回填逻辑改成统一按 IconSource 处理
+- 现在 Emoji 、 Vector 、 Custom 都能正确写回
+- 所以点选 ms 图标后，会像 noto emoji 一样立刻更新上方图标预览
+- 再次打开选择器时，也能根据当前已存的 VECTOR:xxx 正确识别并高亮
+
+# 20260612 09:38 第十轮开发  给 Material Symbols 增加 Material Symbols 的四个轴能力
+已完成
+
+- 这两点我已经一起接进去了：
+- 业务图标用 vector，选择器浏览用 variable font + metadata
+- 补 Material Symbols 的四个轴能力，至少先把选中态做成 Fill 变化
+实现方式
+
+- 在 IconPickerModels.kt 里，我把 Material Symbols 渲染拆成了两条路径：
+- BusinessMaterialSymbolIcon() ：业务显示路径，优先尝试项目内的 drawable vector 资源；如果当前项目还没导入对应 XML/vector，就自动回退到字体 glyph 渲染
+- MaterialSymbolGlyph() ：选择器浏览路径，继续使用 variable font + metadata 来支撑大规模浏览、搜索、随机和分类展示
+四轴能力
+
+- 我新增了 MaterialSymbolAxes 和 materialSymbolAxes() ，把四个轴统一建模了：
+- FILL
+- wght
+- GRAD
+- opsz
+- 当前已经实际生效在变量字体配置上，位置在 IconPickerModels.kt 。
+- 选择器中的选中态现在不只是改背景色，而是会真正切到填充态：
+- FILL = 1
+- 同时把 wght 从 400 提到 500
+- GRAD 从 0 提到 100
+- opsz 跟随图标字号自动取值
+选中态效果
+
+- 在 MiaoIconPicker.kt 里：
+- 图标分页现在会识别当前已选中的 Material Symbol
+- 已选中项会有更明显的主色背景和边框
+- 更关键的是，图标 glyph 本身也会进入 filled 状态，而不是只靠外层卡片高亮
+关于“业务图标用 vector”
+
+- 这次我先把架构分层做好了，但没有一次性把 2000 多个图标都转成项目内 XML/vector，那样成本太高，也不适合作为业务层常驻资源。
+- 现在的策略是：
+- 业务展示层优先找本地 vector 资源
+- 没有就回退到变量字体
+- 这样后面如果你挑出一小批高频业务图标做成官方 Android XML/vector，业务层会自然优先走 vector，而选择器仍然继续走字体浏览，不需要重构
+资源来源与是否本地
+
+- 这里说的“变量字体”目前是本地资源，不是运行时在线导入。当前项目已经把官方字体文件 `material_symbols_outlined.ttf` 下载到 `app/src/main/res/font/` 下，打包后离线可用。
+- 这里说的“本地 vector 资源”指的是预先导入到项目 `res/drawable` 目录下的 Android XML/vector 文件，也不是运行时联网拉取。
+- 当前真实状态是：变量字体已经本地化并投入使用；业务层优先查找本地 vector 的机制已经接好，但高频业务 vector 资源本身还没有开始批量导入，所以现阶段大多数 Material Symbols 仍然走本地变量字体渲染。
+当前 Material Symbols 集成方式
+
+- 字体资源层：使用官方 `Material Symbols Outlined` variable font，本地存放在 `app/src/main/res/font/material_symbols_outlined.ttf`。
+- 元数据层：使用 Google Fonts / Material Symbols 官方 metadata 生成本地图标分类与检索数据，当前拆分为 `MaterialSymbolCatalog.kt` + 多个 `MaterialSymbolData_*.kt` 文件，避免单个 Kotlin 初始化块过大。
+- 渲染分层：
+  - 业务展示层使用 `BusinessMaterialSymbolIcon()`，优先尝试本地 `drawable` vector 资源；若当前图标还没有导入 XML/vector，则自动回退到字体 glyph 渲染。
+  - 图标选择器浏览层使用 `MaterialSymbolGlyph()`，继续走 variable font + metadata，适合大规模浏览、搜索、随机和官方分类展示。
+- 变量轴能力：通过 `MaterialSymbolAxes` 和 `materialSymbolAxes()` 统一管理 `FILL / wght / GRAD / opsz` 四个轴；当前已经让图标选择器中的已选中项进入 filled 状态，并同步提升 `wght` 与 `GRAD`，`opsz` 则按图标字号自动取值。
+- 当前策略总结：
+  - 业务展示层优先找本地 vector 资源
+  - 没有就回退到本地 variable font
+  - 图标选择器浏览层始终使用本地 variable font + metadata
+  - 这样后续只需要补充少量高频业务 vector 资源，不需要重构现有选择器架构
+
+### 改进建议
+1. 图标太多，还是增加上图标导航栏吧，并且选取合适的图标，作为导航栏的icon
+并且使用图标的 fill 状态表示当前图标显示区域是哪一个导航区域，同时也表示选中；
+点击ms图标（Material Symbols，下都称为 ms 图标）分类导航后，导航图标变为 fill，并图标显示区域跳转到对应 ms 图标分类
+
+2. 点击选中图标后，没有正确地设置到新建分类/编辑分类/新建子分类的logo（可以参考 noto emoji 的选中后的设置）
+
+3. 将 noto emoji 的 emoji 分类导航的icon替换为合适的 ms 图标，来表示；
+并且使用 ms 图标的 fill 状态表示当前图标显示区域是哪一个导航区域，同时也表示选中；
+点击emoji 分类导航后，导航图标变为 fill，并图标显示区域跳转到对应 emoji 分类
+
+# 20260612 09:03 第九轮开发
+## 实现效果
+已完成
+
+- 已把 Material Symbols 接入到图标选择器的“图标”分页，并改成官方分类分组展示，不再显示底部导航栏。
+- 这次接的是官方字体资源 + 官方分类元数据，不是手写一小撮 ImageVector 映射，所以后续扩展会更稳。
+核心改动
+
+- 在 MiaoIconPicker.kt 里：
+  - 把“图标”分页从占位文案改成了真正的 MaterialSymbolPickerContent
+  - 搜索框按当前分页动态切换占位文案
+  - “随机”在图标分页下会随机一个 Material Symbol
+  - 图标分页使用“分类标题 + 图标网格”结构
+  - 图标分页不再渲染底部锚点导航栏，只有 Emoji 分页保留
+- 在 IconPickerModels.kt 里：
+  - IconSource.Vector 不再显示占位符
+  - 新增了 Material Symbols 字体渲染、codepoint 转 glyph、分类中文名映射等基础能力
+- 新增了官方分类数据文件 MaterialSymbolCatalog.kt ：
+  - 使用官方分类
+  - 本地持有分类、图标名、codepoint、tags
+  - 当前已生成 2122 个官方图标元数据
+- 新增官方字体资源：
+  - material_symbols_outlined.ttf
+效果
+
+- 图标分页现在更接近你说的 Notion 风格：
+  - 顶部还是同一套 Tab
+  - 中间是搜索/随机
+  - 主体是分组图标网格
+  - 没有底部导航栏
+- 选中的 Material Symbol 会在分类弹窗图标预览位正常显示，不再是占位图标。
+
+- MaterialSymbolCatalog.kt 把 2122 个图标元数据一次性塞进一个超大的顶层初始化里，导致 MaterialSymbolCatalogKt.<clinit> 超限。
+- 现在我改成了：
+- 小型聚合入口 MaterialSymbolCatalog.kt
+- 多个分分类数据文件，例如 MaterialSymbolData_action.kt 、 MaterialSymbolData_home.kt
+- 每个分类再按小块 chunk 惰性初始化，避免单个方法过大
+- 我还顺手去掉了分类数据里没实际用到的 label 字段，进一步减小初始化体积。
+
+# 20260611 14:47 第八轮开发
+## 实现效果
+1. 官方基座全面接入 我拉取了标准的 Emoji 分类元数据，将 CATEGORIZED_EMOJIS 完全切换成了国际通用的 9 大标准分类结构：
+   
+   - 表情与情感 (Smileys & Emotion) 😀
+   - 人物与身体 (People & Body) 👋
+   - 动物与自然 (Animals & Nature) 🐢
+   - 食物与饮品 (Food & Drink) 🍔
+   - 旅行与地点 (Travel & Places) 🚗
+   - 活动 (Activities) ⚽
+   - 物品 (Objects) 💡
+   - 符号 (Symbols) 🔣
+   - 旗帜 (Flags) 🚩 这些分类下现已涵盖完整的标准基础 Emoji。
+2. 最近使用 (系统增强) 正如我们之前规划的，我在分类的最前面注入了“最近使用”分类，并以 🕒 作为锚点图标。目前它放入了一些高频占位符（如 ⭐、👍 等），这样在 UI 层面，用户首屏看到的就是自己最常用的图标，往下滚动则是井然有序的官方底座。
+对应代码
+
+# 20260611 13:05 第七轮开发
 ## 实现效果
 修改
 

@@ -42,6 +42,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -179,11 +181,25 @@ fun MiaoIconPickerPanel(
         SearchBarRow(
             query = searchQuery,
             onQueryChange = { searchQuery = it },
-            onRandom = {
-                CATEGORIZED_EMOJIS
-                    .flatMap { it.emojis }
-                    .randomOrNull()
-                    ?.let { onIconSelected(IconSource.Emoji(it)) }
+            placeholder = when (selectedTab) {
+                1 -> "搜索 Material Symbols"
+                2 -> "上传功能开发中"
+                else -> "搜索表情或图标"
+            },
+            onRandom = when (selectedTab) {
+                0 -> ({
+                    CATEGORIZED_EMOJIS
+                        .flatMap { it.emojis }
+                        .randomOrNull()
+                        ?.let { onIconSelected(IconSource.Emoji(it)) }
+                })
+                1 -> ({
+                    MATERIAL_SYMBOL_CATEGORIES
+                        .flatMap { it.icons }
+                        .randomOrNull()
+                        ?.let { onIconSelected(IconSource.Vector(it.name)) }
+                })
+                else -> null
             },
             onConfirm = onConfirm,
             embedded = embedded
@@ -196,7 +212,12 @@ fun MiaoIconPickerPanel(
                     onEmojiSelected = { onIconSelected(IconSource.Emoji(it)) },
                     embedded = embedded
                 )
-                1 -> PlaceholderContent("Material Symbols 分类接入中...")
+                1 -> MaterialSymbolPickerContent(
+                    searchQuery = searchQuery,
+                    selectedName = (initialIcon as? IconSource.Vector)?.name,
+                    onIconSelected = { onIconSelected(IconSource.Vector(it)) },
+                    embedded = embedded
+                )
                 2 -> PlaceholderContent("上传功能开发中...")
             }
         }
@@ -259,7 +280,8 @@ private fun IconPickerTabs(
 private fun SearchBarRow(
     query: String,
     onQueryChange: (String) -> Unit,
-    onRandom: () -> Unit,
+    placeholder: String,
+    onRandom: (() -> Unit)?,
     onConfirm: (() -> Unit)?,
     embedded: Boolean
 ) {
@@ -282,7 +304,7 @@ private fun SearchBarRow(
                 .height(if (embedded) 48.dp else 52.dp),
             placeholder = {
                 Text(
-                    "搜索表情或图标",
+                    placeholder,
                     style = if (embedded) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodySmall
                 )
             },
@@ -295,14 +317,16 @@ private fun SearchBarRow(
             )
         )
         
-        TextButton(
-            onClick = onRandom,
-            contentPadding = PaddingValues(horizontal = if (embedded) 10.dp else 12.dp, vertical = 0.dp)
-        ) {
-            Text(
-                "随机",
-                style = if (embedded) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge
-            )
+        if (onRandom != null) {
+            TextButton(
+                onClick = onRandom,
+                contentPadding = PaddingValues(horizontal = if (embedded) 10.dp else 12.dp, vertical = 0.dp)
+            ) {
+                Text(
+                    "随机",
+                    style = if (embedded) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge
+                )
+            }
         }
         if (onConfirm != null) {
             Button(
@@ -311,6 +335,183 @@ private fun SearchBarRow(
                 contentPadding = PaddingValues(horizontal = 16.dp)
             ) {
                 Text("确认")
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaterialSymbolPickerContent(
+    searchQuery: String,
+    selectedName: String?,
+    onIconSelected: (String) -> Unit,
+    embedded: Boolean
+) {
+    val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
+    val normalizedQuery = searchQuery.trim()
+    val filteredCategories = remember(normalizedQuery) {
+        if (normalizedQuery.isBlank()) {
+            MATERIAL_SYMBOL_CATEGORIES
+        } else {
+            MATERIAL_SYMBOL_CATEGORIES.mapNotNull { category ->
+                val filteredIcons = category.icons.filter { icon ->
+                    icon.name.contains(normalizedQuery, ignoreCase = true) ||
+                        materialSymbolDisplayName(icon.name).contains(normalizedQuery, ignoreCase = true) ||
+                        icon.tags.any { tag -> tag.contains(normalizedQuery, ignoreCase = true) }
+                }
+                if (filteredIcons.isNotEmpty()) {
+                    category.copy(icons = filteredIcons)
+                } else {
+                    null
+                }
+            }
+        }
+    }
+    val itemIndexByCategory = remember(filteredCategories) {
+        buildMap {
+            var currentIndex = 0
+            filteredCategories.forEach { category ->
+                put(category.key, currentIndex)
+                currentIndex += 1 + category.icons.size
+            }
+        }
+    }
+    val activeCategoryKey by remember(filteredCategories, itemIndexByCategory, gridState) {
+        derivedStateOf {
+            val firstVisibleIndex = gridState.firstVisibleItemIndex
+            filteredCategories
+                .lastOrNull { category ->
+                    val categoryIndex = itemIndexByCategory[category.key] ?: Int.MIN_VALUE
+                    categoryIndex <= firstVisibleIndex
+                }
+                ?.key
+                ?: filteredCategories.firstOrNull()?.key
+                ?: MATERIAL_SYMBOL_CATEGORIES.firstOrNull()?.key
+                ?: "home"
+        }
+    }
+
+    if (filteredCategories.isEmpty()) {
+        PlaceholderContent("没有找到匹配图标")
+        return
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = if (embedded) 42.dp else 50.dp),
+            state = gridState,
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(
+                start = if (embedded) 4.dp else 16.dp,
+                end = if (embedded) 4.dp else 16.dp,
+                top = if (embedded) 4.dp else 16.dp,
+                bottom = if (embedded) 12.dp else 16.dp
+            ),
+            horizontalArrangement = Arrangement.spacedBy(if (embedded) 8.dp else 10.dp),
+            verticalArrangement = Arrangement.spacedBy(if (embedded) 8.dp else 10.dp)
+        ) {
+            filteredCategories.forEach { category ->
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        text = materialSymbolCategoryLabel(category.key),
+                        style = if (embedded) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = if (embedded) 8.dp else 16.dp, bottom = if (embedded) 4.dp else 8.dp)
+                    )
+                }
+
+                items(category.icons, key = { it.name }) { icon ->
+                    val isSelected = icon.name == selectedName
+                    Surface(
+                        modifier = Modifier
+                            .aspectRatio(1f)
+                            .clickable { onIconSelected(icon.name) },
+                        shape = RoundedCornerShape(if (embedded) 12.dp else 14.dp),
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = if (embedded) 0.16f else 0.18f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (embedded) 0.4f else 0.55f)
+                        },
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                            }
+                        )
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            MaterialSymbolGlyph(
+                                name = icon.name,
+                                fontSize = if (embedded) 22.sp else 24.sp,
+                                tint = if (isSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                axes = materialSymbolAxes(
+                                    renderMode = MaterialSymbolRenderMode.Picker,
+                                    fontSize = if (embedded) 22.sp else 24.sp,
+                                    filled = isSelected
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (normalizedQuery.isBlank()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(if (embedded) 2.dp else 0.dp)
+            ) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                Row(
+                    modifier = Modifier
+                        .padding(
+                            top = if (embedded) 2.dp else 8.dp,
+                            bottom = if (embedded) 0.dp else 8.dp,
+                            start = if (embedded) 4.dp else 16.dp,
+                            end = if (embedded) 4.dp else 16.dp
+                        )
+                        .fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MATERIAL_SYMBOL_NAV_ITEMS.forEach { navItem ->
+                        val isActive = navItem.categoryKey == activeCategoryKey
+                        Box(
+                            modifier = Modifier
+                                .size(if (embedded) 30.dp else 36.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    val targetIndex = itemIndexByCategory[navItem.categoryKey] ?: return@clickable
+                                    scope.launch {
+                                        gridState.animateScrollToItem(targetIndex)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            MaterialSymbolGlyph(
+                                name = navItem.iconName,
+                                fontSize = if (embedded) 18.sp else 20.sp,
+                                tint = if (isActive) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                axes = materialSymbolAxes(
+                                    renderMode = MaterialSymbolRenderMode.Picker,
+                                    fontSize = if (embedded) 18.sp else 20.sp,
+                                    filled = isActive
+                                )
+                            )
+                        }
+                    }
+                }
             }
         }
     }
