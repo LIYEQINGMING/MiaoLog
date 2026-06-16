@@ -1,6 +1,8 @@
 package com.example.itemmanagement.ui.components
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -8,15 +10,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.itemmanagement.R
 
 /**
@@ -27,9 +34,14 @@ fun MiaoIcon(
     icon: String,
     modifier: Modifier = Modifier,
     fontSize: TextUnit = 20.sp,
-    tint: Color = MaterialTheme.colorScheme.onSurface
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    fillContainer: Boolean = false
 ) {
     val source = IconSource.fromPersistString(icon)
+    val density = LocalDensity.current
+    val customIconSize = remember(fontSize, density) {
+        with(density) { (fontSize * 1.25f).toDp() }
+    }
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         when (source) {
             is IconSource.Emoji -> Text(text = source.code, fontSize = fontSize)
@@ -38,7 +50,20 @@ fun MiaoIcon(
                 fontSize = fontSize,
                 tint = tint
             )
-            is IconSource.Custom -> Text(text = "🖼️", fontSize = fontSize) // 占位，待集成上传功能
+            is IconSource.Custom -> AsyncImage(
+                model = source.uri,
+                contentDescription = null,
+                modifier = if (fillContainer) {
+                    Modifier
+                        .fillMaxSize()
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                } else {
+                    Modifier
+                        .size(customIconSize)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                },
+                contentScale = ContentScale.Crop
+            )
             IconSource.None -> Text(text = "❓", fontSize = fontSize)
         }
     }

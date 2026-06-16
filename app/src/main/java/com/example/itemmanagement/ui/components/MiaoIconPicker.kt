@@ -1,5 +1,13 @@
 package com.example.itemmanagement.ui.components
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -57,12 +65,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import com.example.itemmanagement.BuildConfig
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -169,7 +188,15 @@ fun MiaoIconPickerPanel(
     onConfirm: (() -> Unit)? = null,
     embedded: Boolean = false
 ) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(if (initialIcon is IconSource.Emoji || initialIcon is IconSource.None) 0 else 1) }
+    var selectedTab by rememberSaveable {
+        mutableIntStateOf(
+            when (initialIcon) {
+                is IconSource.Emoji, IconSource.None -> 0
+                is IconSource.Vector -> 1
+                is IconSource.Custom -> 2
+            }
+        )
+    }
     var searchQuery by rememberSaveable { mutableStateOf("") }
 
     Column(modifier = modifier) {
@@ -180,32 +207,35 @@ fun MiaoIconPickerPanel(
             embedded = embedded
         )
 
-        SearchBarRow(
-            query = searchQuery,
-            onQueryChange = { searchQuery = it },
-            placeholder = when (selectedTab) {
-                1 -> "搜索 Material Symbols"
-                2 -> "上传功能开发中"
-                else -> "搜索表情或图标"
-            },
-            onRandom = when (selectedTab) {
-                0 -> ({
-                    CATEGORIZED_EMOJIS
-                        .flatMap { it.emojis }
-                        .randomOrNull()
-                        ?.let { onIconSelected(IconSource.Emoji(it)) }
-                })
-                1 -> ({
-                    MATERIAL_SYMBOL_CATEGORIES
-                        .flatMap { it.icons }
-                        .randomOrNull()
-                        ?.let { onIconSelected(IconSource.Vector(it.name)) }
-                })
-                else -> null
-            },
-            onConfirm = onConfirm,
-            embedded = embedded
-        )
+        if (selectedTab == 2) {
+            UploadActionRow(embedded = embedded)
+        } else {
+            SearchBarRow(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                placeholder = when (selectedTab) {
+                    1 -> "搜索 Material Symbols"
+                    else -> "搜索表情或图标"
+                },
+                onRandom = when (selectedTab) {
+                    0 -> ({
+                        CATEGORIZED_EMOJIS
+                            .flatMap { it.emojis }
+                            .randomOrNull()
+                            ?.let { onIconSelected(IconSource.Emoji(it)) }
+                    })
+                    1 -> ({
+                        MATERIAL_SYMBOL_CATEGORIES
+                            .flatMap { it.icons }
+                            .randomOrNull()
+                            ?.let { onIconSelected(IconSource.Vector(it.name)) }
+                    })
+                    else -> null
+                },
+                onConfirm = onConfirm,
+                embedded = embedded
+            )
+        }
 
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
@@ -220,7 +250,11 @@ fun MiaoIconPickerPanel(
                     onIconSelected = { onIconSelected(IconSource.Vector(it)) },
                     embedded = embedded
                 )
-                2 -> PlaceholderContent("上传功能开发中...")
+                2 -> UploadIconPickerContent(
+                    initialIcon = initialIcon,
+                    embedded = embedded,
+                    onIconSelected = onIconSelected
+                )
             }
         }
     }
@@ -275,6 +309,28 @@ private fun IconPickerTabs(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun UploadActionRow(
+    embedded: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (embedded) 0.dp else 16.dp,
+                end = if (embedded) 0.dp else 16.dp,
+                bottom = 8.dp
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "拍照或从相册选择",
+            style = if (embedded) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -337,6 +393,143 @@ private fun SearchBarRow(
                 contentPadding = PaddingValues(horizontal = 16.dp)
             ) {
                 Text("确认")
+            }
+        }
+    }
+}
+
+@Composable
+private fun UploadIconPickerContent(
+    initialIcon: IconSource,
+    embedded: Boolean,
+    onIconSelected: (IconSource) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val currentCustomUri = (initialIcon as? IconSource.Custom)?.uri
+
+    val pickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val storedUri = copyUriToIconStorage(context, uri)
+            if (storedUri != null) {
+                onIconSelected(IconSource.Custom(storedUri.toString()))
+            } else {
+                Toast.makeText(context, "图片导入失败，请重试", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val capturedUri = pendingCameraUri
+        pendingCameraUri = null
+        if (success && capturedUri != null) {
+            onIconSelected(IconSource.Custom(capturedUri.toString()))
+        } else if (!success) {
+            Toast.makeText(context, "拍照已取消", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val requestCameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            val cameraUri = createTempIconUri(context)
+            if (cameraUri != null) {
+                pendingCameraUri = cameraUri
+                takePictureLauncher.launch(cameraUri)
+            } else {
+                Toast.makeText(context, "无法创建拍照文件", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "需要相机权限才能拍照", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(
+                start = if (embedded) 4.dp else 16.dp,
+                end = if (embedded) 4.dp else 16.dp,
+                top = if (embedded) 4.dp else 12.dp,
+                bottom = if (embedded) 12.dp else 16.dp
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(if (embedded) 12.dp else 16.dp, Alignment.CenterVertically)
+    ) {
+        Surface(
+            modifier = Modifier.size(if (embedded) 92.dp else 112.dp),
+            shape = RoundedCornerShape(if (embedded) 18.dp else 22.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+            )
+        ) {
+            if (currentCustomUri.isNullOrBlank()) {
+                Box(contentAlignment = Alignment.Center) {
+                    BusinessMaterialSymbolIcon(
+                        name = "imagesmode",
+                        fontSize = if (embedded) 30.sp else 36.sp,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                MiaoIcon(
+                    icon = IconSource.Custom(currentCustomUri).toPersistString(),
+                    modifier = Modifier.fillMaxSize(),
+                    fontSize = if (embedded) 24.sp else 28.sp,
+                    fillContainer = true
+                )
+            }
+        }
+
+        Text(
+            text = if (currentCustomUri.isNullOrBlank()) "上传自定义图标" else "当前已选择自定义图标",
+            style = if (embedded) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Text(
+            text = "支持拍照或从相册选择图片，选中后会直接应用到当前分类图标",
+            style = if (embedded) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        val cameraUri = createTempIconUri(context)
+                        if (cameraUri != null) {
+                            pendingCameraUri = cameraUri
+                            takePictureLauncher.launch(cameraUri)
+                        } else {
+                            Toast.makeText(context, "无法创建拍照文件", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                },
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text("拍照")
+            }
+
+            TextButton(
+                onClick = {
+                    pickImageLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                }
+            ) {
+                Text("从相册选择")
             }
         }
     }
@@ -756,4 +949,50 @@ private fun PlaceholderContent(message: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(text = message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+private fun createTempIconUri(context: android.content.Context): Uri? {
+    return runCatching {
+        val storageDir = resolveCategoryIconStorageDir(context)
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val iconFile = File.createTempFile(
+            "ICON_${timeStamp}_",
+            ".jpg",
+            storageDir
+        )
+        FileProvider.getUriForFile(
+            context,
+            "${BuildConfig.APPLICATION_ID}.provider",
+            iconFile
+        )
+    }.getOrNull()
+}
+
+private suspend fun copyUriToIconStorage(
+    context: android.content.Context,
+    sourceUri: Uri
+): Uri? = withContext(Dispatchers.IO) {
+    runCatching {
+        val storageDir = resolveCategoryIconStorageDir(context)
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val targetFile = File(storageDir, "ICON_PICKED_${timeStamp}.jpg")
+        context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+            FileOutputStream(targetFile).use { outputStream ->
+                inputStream.copyTo(outputStream)
+            }
+        } ?: return@withContext null
+
+        FileProvider.getUriForFile(
+            context,
+            "${BuildConfig.APPLICATION_ID}.provider",
+            targetFile
+        )
+    }.getOrNull()
+}
+
+private fun resolveCategoryIconStorageDir(context: android.content.Context): File {
+    return File(
+        context.getExternalFilesDir("Photos") ?: context.filesDir,
+        "CategoryIcons"
+    ).apply { mkdirs() }
 }

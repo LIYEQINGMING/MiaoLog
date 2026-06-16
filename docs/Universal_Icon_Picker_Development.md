@@ -1,4 +1,51 @@
 # 系统级通用图标选择器开发文档 (Universal Icon Picker Development)
+# 20260616 14:35 第十七轮开发 上传图片图标（拍照 / 相册选择 / 自定义图片预览）
+## 实现效果
+已完成
+
+- 图标选择器的“上传”分页已经从占位页改成真实可用的上传入口。
+- 现在在编辑分类、新建分类、新建子分类里，都可以给分类图标选择自定义图片。
+- 上传方式支持两种：
+- 拍照
+- 从相册选择
+- 当用户点击拍照时，会先检查并申请相机权限；授权后直接打开系统相机。
+- 当用户从相册选择图片时，会把选中的图片复制到应用自己的分类图标目录，再回填给当前分类。
+- `IconSource.Custom` 也不再是 `🖼️` 占位符，而是已经支持真实图片渲染，所以分类预览位、分类列表、分类选择器里都能显示上传后的图片图标。
+改动
+
+- 在 MiaoIconPicker.kt 里：
+- 把“上传”分页从占位文案改成了 `UploadIconPickerContent()`
+- 接入了 `ActivityResultContracts.PickVisualMedia()`
+- 接入了 `ActivityResultContracts.TakePicture()`
+- 接入了 `ActivityResultContracts.RequestPermission()`
+- 拍照后会生成 `CUSTOM:...` 并立即回填
+- 相册选图后会先复制到应用私有目录，再生成 `CUSTOM:...` 并立即回填
+- 同时新增了分类图标目录解析与 `FileProvider` Uri 生成逻辑
+- `FileProvider` authority 现在统一使用 `${applicationId}.provider`，避免后续 authority 写死导致不一致
+- 在 IconPickerModels.kt 里：
+- `MiaoIcon()` 新增了 `fillContainer` 能力
+- `IconSource.Custom` 现在通过 `AsyncImage` 渲染真实图片
+- 普通列表态会按图标尺寸显示缩略图
+- 上传页的大预览位会直接铺满容器显示图片
+- 在 AndroidManifest.xml 里：
+- 把 `FileProvider` authority 改成 `${applicationId}.provider`
+- 这样和代码侧 `BuildConfig.APPLICATION_ID` 的生成规则保持一致
+当前验证情况
+
+- `MiaoIconPicker.kt`、`IconPickerModels.kt`、`AndroidManifest.xml` 的 IDE 诊断都已通过，没有新增语法或类型错误。
+- 我尝试执行 `:app:compileDebugKotlin` 做整体验证，但这次构建仍然被你项目当前环境中的老问题拦住了：
+- `app/build/intermediates/compile_and_runtime_not_namespaced_r_class_jar/debug/R.jar`
+- Windows 报错是“另一个程序正在使用此文件，进程无法访问”
+- 所以这次构建失败的原因不是本轮 Kotlin 改动，而是资源阶段的文件锁问题，Gradle 还没真正进入 Kotlin 编译验证。
+后续建议
+
+- 如果你要继续验证真机链路，优先手测这三条：
+- 编辑分类里上传图片图标
+- 新建分类里上传图片图标
+- 新建子分类里上传图片图标
+- 如果拍照时再次遇到系统权限或 Uri 问题，再继续针对具体机型做兼容修正。
+
+
 # 20260616 14:10 第十六轮开发 emoji页导航栏、ms图标导航栏点击图标fill问题
 ## 实现效果
 - 把导航栏 fill 的判定逻辑改成了“点击优先，滑动兜底”。

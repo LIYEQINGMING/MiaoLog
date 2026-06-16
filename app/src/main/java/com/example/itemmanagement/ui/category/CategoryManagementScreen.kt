@@ -720,7 +720,12 @@ private fun CategoryEditorDialog(
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
             ) {
-                MiaoIcon(icon = selectedIcon, fontSize = 26.sp)
+                MiaoIcon(
+                    icon = selectedIcon,
+                    modifier = Modifier.fillMaxSize(),
+                    fontSize = 26.sp,
+                    fillContainer = true
+                )
             }
 
             OutlinedTextField(
