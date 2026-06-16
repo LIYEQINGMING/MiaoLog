@@ -1282,7 +1282,7 @@ private fun ItemCategoryCreateDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 260.dp, max = 320.dp),
+                    .heightIn(min = 340.dp, max = 420.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
                 MiaoIconPickerPanel(

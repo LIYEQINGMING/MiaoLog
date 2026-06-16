@@ -54,6 +54,11 @@ data class MaterialSymbolNavItem(
     val iconName: String
 )
 
+data class EmojiNavItem(
+    val categoryName: String,
+    val iconName: String
+)
+
 data class MaterialSymbolAxes(
     val fill: Float = 0f,
     val weight: Int = 400,
@@ -179,9 +184,9 @@ fun materialSymbolCategoryLabel(key: String): String = when (key) {
 val MATERIAL_SYMBOL_NAV_ITEMS = listOf(
     MaterialSymbolNavItem("home", "home"),
     MaterialSymbolNavItem("action", "touch_app"),
-    MaterialSymbolNavItem("content", "article"),
+    MaterialSymbolNavItem("content", "description"),
     MaterialSymbolNavItem("communication", "chat"),
-    MaterialSymbolNavItem("social", "group"),
+    MaterialSymbolNavItem("social", "groups"),
     MaterialSymbolNavItem("notification", "notifications"),
     MaterialSymbolNavItem("av", "play_circle"),
     MaterialSymbolNavItem("image", "image"),
@@ -192,9 +197,22 @@ val MATERIAL_SYMBOL_NAV_ITEMS = listOf(
     MaterialSymbolNavItem("hardware", "memory"),
     MaterialSymbolNavItem("editor", "edit"),
     MaterialSymbolNavItem("file", "folder"),
-    MaterialSymbolNavItem("search", "search"),
-    MaterialSymbolNavItem("toggle", "toggle_on"),
+    MaterialSymbolNavItem("search", "saved_search"),
+    MaterialSymbolNavItem("toggle", "check_box"),
     MaterialSymbolNavItem("alert", "warning")
+)
+
+val EMOJI_NAV_ITEMS = listOf(
+    EmojiNavItem("最近使用", "history"),
+    EmojiNavItem("表情与情感", "mood"),
+    EmojiNavItem("人物与身体", "emoji_people"),
+    EmojiNavItem("动物与自然", "pets"),
+    EmojiNavItem("食物与饮品", "restaurant"),
+    EmojiNavItem("旅行与地点", "travel_explore"),
+    EmojiNavItem("活动", "sports_esports"),
+    EmojiNavItem("物品", "lightbulb"),
+    EmojiNavItem("符号", "code"),
+    EmojiNavItem("旗帜", "flag")
 )
 
 fun materialSymbolGlyph(name: String): String? {

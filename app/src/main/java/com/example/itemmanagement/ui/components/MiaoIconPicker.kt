@@ -1,6 +1,8 @@
 package com.example.itemmanagement.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -349,6 +351,7 @@ private fun MaterialSymbolPickerContent(
 ) {
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
+    var clickedCategoryKey by remember { mutableStateOf<String?>(null) }
     val normalizedQuery = searchQuery.trim()
     val filteredCategories = remember(normalizedQuery) {
         if (normalizedQuery.isBlank()) {
@@ -377,18 +380,59 @@ private fun MaterialSymbolPickerContent(
             }
         }
     }
-    val activeCategoryKey by remember(filteredCategories, itemIndexByCategory, gridState) {
+    val categoryRangeByKey = remember(filteredCategories, itemIndexByCategory) {
+        buildMap {
+            filteredCategories.forEach { category ->
+                val startIndex = itemIndexByCategory[category.key] ?: return@forEach
+                put(category.key, startIndex..(startIndex + category.icons.size))
+            }
+        }
+    }
+    val scrollDrivenCategoryKey by remember(filteredCategories, itemIndexByCategory, categoryRangeByKey, gridState) {
         derivedStateOf {
-            val firstVisibleIndex = gridState.firstVisibleItemIndex
-            filteredCategories
-                .lastOrNull { category ->
-                    val categoryIndex = itemIndexByCategory[category.key] ?: Int.MIN_VALUE
-                    categoryIndex <= firstVisibleIndex
+            val layoutInfo = gridState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) {
+                filteredCategories.firstOrNull()?.key
+                    ?: MATERIAL_SYMBOL_CATEGORIES.firstOrNull()?.key
+                    ?: "home"
+            } else {
+                val lastVisibleIndex = visibleItems.maxOf { it.index }
+                if (lastVisibleIndex >= layoutInfo.totalItemsCount - 1) {
+                    filteredCategories.lastOrNull()?.key
+                        ?: MATERIAL_SYMBOL_CATEGORIES.lastOrNull()?.key
+                        ?: "home"
+                } else {
+                    val firstVisibleIndex = visibleItems.minOf { it.index }
+                    filteredCategories
+                        .lastOrNull { category ->
+                            val categoryIndex = itemIndexByCategory[category.key] ?: Int.MIN_VALUE
+                            categoryIndex <= firstVisibleIndex
+                        }
+                        ?.key
+                        ?: filteredCategories.firstOrNull()?.key
+                        ?: MATERIAL_SYMBOL_CATEGORIES.firstOrNull()?.key
+                        ?: "home"
                 }
-                ?.key
-                ?: filteredCategories.firstOrNull()?.key
-                ?: MATERIAL_SYMBOL_CATEGORIES.firstOrNull()?.key
-                ?: "home"
+            }
+        }
+    }
+    val visibleCategoryKeys by remember(categoryRangeByKey, gridState) {
+        derivedStateOf {
+            val visibleIndices = gridState.layoutInfo.visibleItemsInfo.map { it.index }.toSet()
+            categoryRangeByKey
+                .filterValues { range -> visibleIndices.any { it in range } }
+                .keys
+        }
+    }
+    val activeCategoryKey by remember(clickedCategoryKey, scrollDrivenCategoryKey) {
+        derivedStateOf { clickedCategoryKey ?: scrollDrivenCategoryKey }
+    }
+
+    LaunchedEffect(clickedCategoryKey, visibleCategoryKeys) {
+        val targetKey = clickedCategoryKey ?: return@LaunchedEffect
+        if (targetKey !in visibleCategoryKeys) {
+            clickedCategoryKey = null
         }
     }
 
@@ -464,6 +508,7 @@ private fun MaterialSymbolPickerContent(
         }
 
         if (normalizedQuery.isBlank()) {
+            val navScrollState = rememberScrollState()
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(if (embedded) 2.dp else 0.dp)
@@ -477,8 +522,9 @@ private fun MaterialSymbolPickerContent(
                             start = if (embedded) 4.dp else 16.dp,
                             end = if (embedded) 4.dp else 16.dp
                         )
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .fillMaxWidth()
+                        .horizontalScroll(navScrollState),
+                    horizontalArrangement = Arrangement.spacedBy(if (embedded) 6.dp else 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     MATERIAL_SYMBOL_NAV_ITEMS.forEach { navItem ->
@@ -488,9 +534,10 @@ private fun MaterialSymbolPickerContent(
                                 .size(if (embedded) 30.dp else 36.dp)
                                 .clip(CircleShape)
                                 .clickable {
+                                    clickedCategoryKey = navItem.categoryKey
                                     val targetIndex = itemIndexByCategory[navItem.categoryKey] ?: return@clickable
                                     scope.launch {
-                                        gridState.animateScrollToItem(targetIndex)
+                                        gridState.scrollToItem(targetIndex)
                                     }
                                 },
                             contentAlignment = Alignment.Center
@@ -525,17 +572,82 @@ private fun EmojiPickerContent(
 ) {
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
-    
+    var clickedCategoryName by remember { mutableStateOf<String?>(null) }
+    val normalizedQuery = searchQuery.trim()
     val filteredCategories = remember(searchQuery) {
-        if (searchQuery.isBlank()) {
+        if (normalizedQuery.isBlank()) {
             CATEGORIZED_EMOJIS
         } else {
             CATEGORIZED_EMOJIS.mapNotNull { category ->
-                val filteredEmojis = category.emojis.filter { it.contains(searchQuery) }
+                val filteredEmojis = category.emojis.filter { it.contains(normalizedQuery) }
                 if (filteredEmojis.isNotEmpty()) {
                     category.copy(emojis = filteredEmojis)
                 } else null
             }
+        }
+    }
+    val itemIndexByCategory = remember(filteredCategories) {
+        buildMap {
+            var currentIndex = 0
+            filteredCategories.forEach { category ->
+                put(category.name, currentIndex)
+                currentIndex += 1 + category.emojis.size
+            }
+        }
+    }
+    val categoryRangeByName = remember(filteredCategories, itemIndexByCategory) {
+        buildMap {
+            filteredCategories.forEach { category ->
+                val startIndex = itemIndexByCategory[category.name] ?: return@forEach
+                put(category.name, startIndex..(startIndex + category.emojis.size))
+            }
+        }
+    }
+    val scrollDrivenCategoryName by remember(filteredCategories, itemIndexByCategory, categoryRangeByName, gridState) {
+        derivedStateOf {
+            val layoutInfo = gridState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) {
+                filteredCategories.firstOrNull()?.name
+                    ?: CATEGORIZED_EMOJIS.firstOrNull()?.name
+                    ?: "最近使用"
+            } else {
+                val lastVisibleIndex = visibleItems.maxOf { it.index }
+                if (lastVisibleIndex >= layoutInfo.totalItemsCount - 1) {
+                    filteredCategories.lastOrNull()?.name
+                        ?: CATEGORIZED_EMOJIS.lastOrNull()?.name
+                        ?: "最近使用"
+                } else {
+                    val firstVisibleIndex = visibleItems.minOf { it.index }
+                    filteredCategories
+                        .lastOrNull { category ->
+                            val categoryIndex = itemIndexByCategory[category.name] ?: Int.MIN_VALUE
+                            categoryIndex <= firstVisibleIndex
+                        }
+                        ?.name
+                        ?: filteredCategories.firstOrNull()?.name
+                        ?: CATEGORIZED_EMOJIS.firstOrNull()?.name
+                        ?: "最近使用"
+                }
+            }
+        }
+    }
+    val visibleCategoryNames by remember(categoryRangeByName, gridState) {
+        derivedStateOf {
+            val visibleIndices = gridState.layoutInfo.visibleItemsInfo.map { it.index }.toSet()
+            categoryRangeByName
+                .filterValues { range -> visibleIndices.any { it in range } }
+                .keys
+        }
+    }
+    val activeCategoryName by remember(clickedCategoryName, scrollDrivenCategoryName) {
+        derivedStateOf { clickedCategoryName ?: scrollDrivenCategoryName }
+    }
+
+    LaunchedEffect(clickedCategoryName, visibleCategoryNames) {
+        val targetName = clickedCategoryName ?: return@LaunchedEffect
+        if (targetName !in visibleCategoryNames) {
+            clickedCategoryName = null
         }
     }
 
@@ -582,7 +694,8 @@ private fun EmojiPickerContent(
         }
 
         // 锚点导航栏 (仅在非搜索状态显示)
-        if (searchQuery.isBlank()) {
+        if (normalizedQuery.isBlank()) {
+            val navScrollState = rememberScrollState()
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(if (embedded) 2.dp else 0.dp)
@@ -596,28 +709,40 @@ private fun EmojiPickerContent(
                             start = if (embedded) 4.dp else 16.dp,
                             end = if (embedded) 4.dp else 16.dp
                         )
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .fillMaxWidth()
+                        .horizontalScroll(navScrollState),
+                    horizontalArrangement = Arrangement.spacedBy(if (embedded) 6.dp else 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CATEGORIZED_EMOJIS.forEachIndexed { index, category ->
+                    EMOJI_NAV_ITEMS.forEach { navItem ->
+                        val isActive = navItem.categoryName == activeCategoryName
                         Box(
                             modifier = Modifier
                                 .size(if (embedded) 30.dp else 36.dp)
                                 .clip(CircleShape)
                                 .clickable {
+                                    clickedCategoryName = navItem.categoryName
+                                    val targetIndex = itemIndexByCategory[navItem.categoryName] ?: return@clickable
                                     scope.launch {
-                                        var targetIndex = 0
-                                        for (i in 0 until index) {
-                                            targetIndex += 1
-                                            targetIndex += CATEGORIZED_EMOJIS[i].emojis.size
-                                        }
-                                        gridState.animateScrollToItem(targetIndex)
+                                        gridState.scrollToItem(targetIndex)
                                     }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = category.icon, fontSize = if (embedded) 15.sp else 18.sp)
+                            MaterialSymbolGlyph(
+                                name = navItem.iconName,
+                                fontSize = if (embedded) 18.sp else 20.sp,
+                                tint = if (isActive) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                axes = materialSymbolAxes(
+                                    renderMode = MaterialSymbolRenderMode.Picker,
+                                    fontSize = if (embedded) 18.sp else 20.sp,
+                                    filled = isActive
+                                )
+                            )
                         }
                     }
                 }
