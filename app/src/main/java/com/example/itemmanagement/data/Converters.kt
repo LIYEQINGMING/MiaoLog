@@ -119,4 +119,55 @@ class Converters {
     fun toBorrowStatus(value: String?): BorrowStatus? {
         return value?.let { BorrowStatus.valueOf(it) }
     }
+
+    // Attribute related converters
+    @TypeConverter
+    fun fromAttributeOwnerType(value: com.example.itemmanagement.data.model.attribute.AttributeOwnerType?): String? {
+        return value?.name
+    }
+
+    @TypeConverter
+    fun toAttributeOwnerType(value: String?): com.example.itemmanagement.data.model.attribute.AttributeOwnerType? {
+        return value?.let { com.example.itemmanagement.data.model.attribute.AttributeOwnerType.valueOf(it) }
+    }
+
+    @TypeConverter
+    fun fromAttributeValueType(value: com.example.itemmanagement.data.model.attribute.AttributeValueType?): String? {
+        return value?.name
+    }
+
+    @TypeConverter
+    fun toAttributeValueType(value: String?): com.example.itemmanagement.data.model.attribute.AttributeValueType? {
+        return value?.let { com.example.itemmanagement.data.model.attribute.AttributeValueType.valueOf(it) }
+    }
+
+    @TypeConverter
+    fun fromAttributeOptionSource(value: com.example.itemmanagement.data.model.attribute.AttributeOptionSource?): String? {
+        return value?.name
+    }
+
+    @TypeConverter
+    fun toAttributeOptionSource(value: String?): com.example.itemmanagement.data.model.attribute.AttributeOptionSource? {
+        return value?.let { com.example.itemmanagement.data.model.attribute.AttributeOptionSource.valueOf(it) }
+    }
+
+    @TypeConverter
+    fun fromAttributeInputMode(value: com.example.itemmanagement.data.model.attribute.AttributeInputMode?): String? {
+        return value?.name
+    }
+
+    @TypeConverter
+    fun toAttributeInputMode(value: String?): com.example.itemmanagement.data.model.attribute.AttributeInputMode? {
+        return value?.let { com.example.itemmanagement.data.model.attribute.AttributeInputMode.valueOf(it) }
+    }
+
+    @TypeConverter
+    fun fromRuleComputationType(value: com.example.itemmanagement.data.model.attribute.RuleComputationType?): String? {
+        return value?.name
+    }
+
+    @TypeConverter
+    fun toRuleComputationType(value: String?): com.example.itemmanagement.data.model.attribute.RuleComputationType? {
+        return value?.let { com.example.itemmanagement.data.model.attribute.RuleComputationType.valueOf(it) }
+    }
 } 

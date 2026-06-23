@@ -92,9 +92,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
-import com.example.itemmanagement.data.model.PriceActionConfig
-import com.example.itemmanagement.data.model.PriceAttributeHelper
-import com.example.itemmanagement.data.model.PriceAttributeValue
+import com.example.itemmanagement.data.model.attribute.LegacyPriceFieldSupport
+import com.example.itemmanagement.data.model.attribute.PriceActionConfig
+import com.example.itemmanagement.data.model.attribute.PriceAttributeValue
 import com.example.itemmanagement.ui.add.Field
 import com.example.itemmanagement.ui.base.BaseItemViewModel
 import com.example.itemmanagement.ui.main.LiquidBackground
@@ -1613,7 +1613,7 @@ fun ItemPriceAttributeBlock(
     onValueChange: (PriceAttributeValue) -> Unit
 ) {
     val supportedActions = remember(definition) {
-        PriceAttributeHelper.parseSupportedActions(definition.supportedActions)
+        LegacyPriceFieldSupport.parseSupportedActions(definition.supportedActions)
     }
     
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

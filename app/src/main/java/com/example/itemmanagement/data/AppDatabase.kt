@@ -41,6 +41,10 @@ import com.example.itemmanagement.data.dao.unified.CustomAttributeDefinitionDao
 import com.example.itemmanagement.data.dao.unified.ItemCustomAttributeDao
 import com.example.itemmanagement.data.dao.unified.ShoppingDetailDao
 import com.example.itemmanagement.data.dao.unified.InventoryDetailDao
+import com.example.itemmanagement.data.dao.attribute.AttributeDefinitionDao
+import com.example.itemmanagement.data.dao.attribute.RuleDefinitionDao
+import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
+import com.example.itemmanagement.data.entity.attribute.RuleDefinitionEntity
 import com.example.itemmanagement.data.migration.UnifiedSchemaMigration
 
 @Database(
@@ -76,13 +80,17 @@ import com.example.itemmanagement.data.migration.UnifiedSchemaMigration
         // === 物品模板 ===
         ItemTemplateEntity::class,
         
+        // === 新属性系统 ===
+        AttributeDefinitionEntity::class,
+        RuleDefinitionEntity::class,
+        
         // === 旧表（已归档到archived文件夹） ===
         // ItemEntity::class,
         // ShoppingItemEntity::class,
         // DeletedItemEntity::class,
         // WishlistItemEntity::class
     ],
-    version = 57,
+    version = 59,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -114,6 +122,10 @@ abstract class AppDatabase : RoomDatabase() {
     // === 物品模板Dao ===
     abstract fun itemTemplateDao(): ItemTemplateDao
     
+    // === 新属性系统Dao ===
+    abstract fun attributeDefinitionDao(): AttributeDefinitionDao
+    abstract fun ruleDefinitionDao(): RuleDefinitionDao
+    
     // === 旧Dao（已归档到archived文件夹） ===
     abstract fun galleryDao(): GalleryDao
     abstract fun tagGroupDao(): TagGroupDao
@@ -134,7 +146,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "item_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_5, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, UnifiedSchemaMigration.MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_5, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, UnifiedSchemaMigration.MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
@@ -2913,6 +2925,51 @@ abstract class AppDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE `item_custom_attributes` ADD COLUMN `recurrenceType` TEXT DEFAULT NULL")
                 database.execSQL("ALTER TABLE `item_custom_attributes` ADD COLUMN `autoRenew` INTEGER DEFAULT NULL")
                 database.execSQL("ALTER TABLE `item_custom_attributes` ADD COLUMN `nextChargeDate` INTEGER DEFAULT NULL")
+            }
+        }
+        val MIGRATION_57_58 = object : Migration(57, 58) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `attribute_definitions` (
+                        `id` TEXT NOT NULL,
+                        `key` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `ownerType` TEXT NOT NULL,
+                        `valueType` TEXT NOT NULL,
+                        `optionSource` TEXT NOT NULL,
+                        `inputMode` TEXT NOT NULL,
+                        `isMultiValue` INTEGER NOT NULL,
+                        `optionItemsJson` TEXT NOT NULL,
+                        `icon` TEXT,
+                        `templateId` TEXT,
+                        `ruleBindingsJson` TEXT NOT NULL,
+                        `description` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """)
+            }
+        }
+        val MIGRATION_58_59 = object : Migration(58, 59) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `rule_definitions` (
+                        `id` TEXT NOT NULL,
+                        `key` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `computationType` TEXT NOT NULL,
+                        `inputRolesJson` TEXT NOT NULL,
+                        `requiredDependenciesJson` TEXT NOT NULL,
+                        `optionalDependenciesJson` TEXT NOT NULL,
+                        `outputKeysJson` TEXT NOT NULL,
+                        `expression` TEXT,
+                        `description` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """)
             }
         }
     }

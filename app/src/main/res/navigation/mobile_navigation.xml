@@ -105,6 +105,9 @@
             android:id="@+id/action_profile_to_category_management"
             app:destination="@id/nav_category" />
         <action
+            android:id="@+id/action_profile_to_attribute_management"
+            app:destination="@id/nav_attribute" />
+        <action
             android:id="@+id/action_profile_to_data_export"
             app:destination="@id/navigation_data_export" />
         <action
@@ -249,6 +252,11 @@
         android:id="@+id/nav_category"
         android:name="com.example.itemmanagement.ui.category.CategoryFragment"
         android:label="分类管理" />
+
+    <fragment
+        android:id="@+id/nav_attribute"
+        android:name="com.example.itemmanagement.ui.attribute.AttributeFragment"
+        android:label="属性管理" />
 
     <fragment
         android:id="@+id/categoryPickerFragment"
