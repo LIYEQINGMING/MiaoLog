@@ -75,6 +75,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.livedata.observeAsState
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,10 +92,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
-import com.example.itemmanagement.data.model.attribute.LegacyPriceFieldSupport
-import com.example.itemmanagement.data.model.attribute.PriceActionConfig
-import com.example.itemmanagement.data.model.attribute.PriceAttributeValue
+import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
+import com.example.itemmanagement.data.model.attribute.AttributeInputMode
+import com.example.itemmanagement.data.model.attribute.RuleBinding
+import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
+import com.example.itemmanagement.data.model.attribute.RuleDefinition
+import com.example.itemmanagement.data.model.attribute.AttributeValueType
+import com.example.itemmanagement.data.model.attribute.RuleOutputTargetType
+import com.example.itemmanagement.data.model.attribute.RuleRuntimeEvaluationContext
+import com.example.itemmanagement.data.model.attribute.RuleRuntimeOutputState
+import com.example.itemmanagement.data.model.attribute.SystemVariableKey
+import com.example.itemmanagement.data.model.attribute.expandAttributeFieldSelectionWithRules
+import com.example.itemmanagement.data.model.attribute.evaluateRuleRuntimeOutput
+import com.example.itemmanagement.data.model.attribute.findSystemVariableDefinition
+import com.example.itemmanagement.data.model.attribute.findRequiredBySelectedFieldNames
+import com.example.itemmanagement.data.model.attribute.resolveRuleOutputProjections
 import com.example.itemmanagement.ui.add.Field
 import com.example.itemmanagement.ui.base.BaseItemViewModel
 import com.example.itemmanagement.ui.main.LiquidBackground
@@ -105,21 +117,57 @@ import com.example.itemmanagement.utils.defaultCategoryIcon
 import com.example.itemmanagement.utils.joinCategoryPath
 import com.example.itemmanagement.utils.normalizeCategoryPath
 import com.example.itemmanagement.utils.splitCategoryPath
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import kotlin.math.abs
+import kotlin.math.max
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+val ITEM_BASE_REQUIRED_FIELDS: Set<String> = setOf("名称", "分类", "数量")
+val ITEM_BASE_OPTIONAL_FIELDS: Set<String> = setOf("品牌", "规格")
+val ITEM_DEFAULT_SUPPLEMENT_FIELDS: Set<String> = emptySet()
+
+private val LEGACY_BOUND_ATTRIBUTE_FIELD_BY_KEY = mapOf(
+    "purchase_price" to "单价",
+    "purchase_date" to "购买日期",
+    "item_status" to "状态",
+    "item_tags" to "标签",
+    "item_total_price" to "总价",
+    "item_currency" to "币种",
+    "item_purchase_channel" to "购买渠道",
+    "item_store_name" to "商家名称",
+    "item_note" to "备注",
+    "item_location" to "位置",
+    "item_place" to "地点",
+    "item_serial_number" to "序列号",
+    "item_capacity" to "容量",
+    "item_rating" to "评分",
+    "item_production_date" to "生产日期",
+    "item_shelf_life" to "保质期",
+    "item_expiration_date" to "保质过期时间",
+    "item_warranty_period" to "保修期",
+    "item_warranty_expiry" to "保修到期时间",
+    "item_subscription_flag" to "订阅制",
+    "item_auto_renew" to "自动续费",
+    "item_billing_cycle" to "扣费周期",
+    "item_open_status" to "开封状态",
+    "item_season" to "季节",
+)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ItemFormScaffold(
     headerContent: (@Composable () -> Unit)? = null,
-    imageSection: @Composable () -> Unit,
+    imageSection: (@Composable () -> Unit)? = null,
     baseSection: @Composable ColumnScope.() -> Unit,
     supplementSection: @Composable ColumnScope.() -> Unit,
     functionSection: (@Composable ColumnScope.() -> Unit)? = null,
     saveButtonText: String,
     isSaveEnabled: Boolean,
+    showSaveButton: Boolean = true,
     onSave: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -128,51 +176,47 @@ fun ItemFormScaffold(
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
-                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp,
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 2.dp,
                 bottom = 112.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             headerContent?.let { content ->
-                item {
-                    content()
-                }
+                item { content() }
             }
 
             item {
-                imageSection()
-            }
-
-            item {
-                ItemFormSectionCard(title = "基础信息区", content = baseSection)
-            }
-
-            item {
-                ItemFormSectionCard(title = "补充信息区", content = supplementSection)
-            }
-
-            functionSection?.let { content ->
-                item {
-                    ItemFormSectionCard(title = "功能区", content = content)
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    contentPadding = 18.dp
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        imageSection?.invoke()
+                        baseSection()
+                        supplementSection()
+                        functionSection?.invoke(this)
+                    }
                 }
             }
         }
 
-        ItemSaveBar(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                ),
-            buttonText = saveButtonText,
-            isSaveEnabled = isSaveEnabled,
-            onSave = onSave
-        )
+        if (showSaveButton) {
+            ItemSaveBar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                    ),
+                buttonText = saveButtonText,
+                isSaveEnabled = isSaveEnabled,
+                onSave = onSave
+            )
+        }
     }
 }
-
 @Composable
 fun ItemFormSectionCard(
     title: String,
@@ -202,12 +246,12 @@ fun ItemImageSection(
     onTakePhoto: () -> Unit,
     onRemovePhoto: (Int) -> Unit
 ) {
-    ItemFormSectionCard(title = "图片") {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (photoUris.isEmpty()) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
+                    .padding(top = 2.dp),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.16f)
             ) {
@@ -225,7 +269,7 @@ fun ItemImageSection(
             }
         } else {
             FlowRow(
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(top = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -279,7 +323,6 @@ fun ItemImageSection(
         }
     }
 }
-
 @Composable
 fun ItemCompactTextRow(
     label: String,
@@ -1030,7 +1073,7 @@ private fun ItemCategoryPickerEntryCard(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "进入下一级"
+                                contentDescription = "进入下一层"
                             )
                         }
                         Spacer(modifier = Modifier.width(4.dp))
@@ -1133,7 +1176,7 @@ private fun ItemCategoryPickerSearchResultCard(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = "进入下一级"
+                                    contentDescription = "进入下一层"
                                 )
                             }
                             Spacer(modifier = Modifier.width(4.dp))
@@ -1317,7 +1360,8 @@ private fun ItemCategoryCreateDialog(
 fun ItemSupplementFieldItem(
     fieldName: String,
     viewModel: BaseItemViewModel,
-    customAttributeDefinitions: List<CustomAttributeDefinitionEntity>,
+    customAttributeDefinitions: List<AttributeDefinitionEntity>,
+    readonlyDerivedFieldNames: Set<String> = emptySet(),
     locked: Boolean = false,
     onDelete: () -> Unit
 ) {
@@ -1328,7 +1372,12 @@ fun ItemSupplementFieldItem(
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.10f)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                ItemRenderSupplementField(fieldName, viewModel, customAttributeDefinitions)
+                ItemRenderSupplementField(
+                    fieldName = fieldName,
+                    viewModel = viewModel,
+                    customAttributeDefinitions = customAttributeDefinitions,
+                    readonlyDerivedFieldNames = readonlyDerivedFieldNames,
+                )
             }
         }
     }
@@ -1344,15 +1393,45 @@ fun ItemSupplementFieldItem(
 fun ItemRenderSupplementField(
     fieldName: String,
     viewModel: BaseItemViewModel,
-    customAttributeDefinitions: List<CustomAttributeDefinitionEntity>
+    customAttributeDefinitions: List<AttributeDefinitionEntity>,
+    readonlyDerivedFieldNames: Set<String> = emptySet(),
 ) {
     val customDefinition = customAttributeDefinitions.firstOrNull { itemCustomFieldName(it) == fieldName }
-    if (customDefinition != null) {
-        ItemCustomAttributeField(definition = customDefinition, viewModel = viewModel, showFunctionControl = true)
+    if (customDefinition != null && !itemUsesLegacyItemField(customDefinition)) {
+        ItemCustomAttributeField(
+            definition = customDefinition,
+            viewModel = viewModel,
+            showFunctionControl = true,
+            readonlyDerived = fieldName in readonlyDerivedFieldNames,
+        )
         return
     }
 
     when (fieldName) {
+        "状态" -> ItemCompactSelectRow(
+            label = "状态",
+            value = itemStringValue(viewModel.getFieldValue("状态")),
+            placeholder = "选择状态",
+            options = listOf("服役中", "未购买", "待补款", "已退役", "已过期"),
+            onValueSelected = { viewModel.saveFieldValue("状态", it) }
+        )
+        "标签" -> {
+            val selectedTags by viewModel.selectedTags.observeAsState(emptyMap())
+            val suggestions = remember(selectedTags) {
+                val defaults = viewModel.getFieldProperties("标签").options.orEmpty()
+                (defaults + viewModel.getCustomTags("标签") + selectedTags["标签"].orEmpty()).distinct()
+            }
+            ItemTagEditorField(
+                label = "标签",
+                selectedTags = selectedTags["标签"].orEmpty(),
+                suggestions = suggestions,
+                onCreateTag = { tag -> viewModel.addCustomTag("标签", tag) },
+                onTagsChange = {
+                    viewModel.updateSelectedTags("标签", it)
+                    viewModel.saveFieldValue("标签", it)
+                }
+            )
+        }
         "单价" -> ItemPriceField(
             label = "购入价格",
             value = itemStringValue(viewModel.getFieldValue("单价")),
@@ -1363,7 +1442,7 @@ fun ItemRenderSupplementField(
                 viewModel.saveFieldValue("币种", it)
                 viewModel.saveFieldValue("单价_unit", it)
             },
-            actionTitle = "不计入总价",
+            actionTitle = "不计入总价值",
             actionChecked = itemBooleanValue(viewModel.getFieldValue("不计入总价值")),
             onActionCheckedChange = { viewModel.saveFieldValue("不计入总价值", it) }
         )
@@ -1467,19 +1546,58 @@ fun ItemRenderSupplementField(
 fun ItemFunctionFieldItem(
     fieldName: String,
     viewModel: BaseItemViewModel,
-    customDefinitions: List<CustomAttributeDefinitionEntity>,
+    customDefinitions: List<AttributeDefinitionEntity>,
+    itemRuleBindings: List<RuleBindingInstance> = emptyList(),
+    ruleDefinitions: List<RuleDefinition> = emptyList(),
+    locked: Boolean = false,
     onDelete: () -> Unit
 ) {
     val customDefinition = customDefinitions.firstOrNull { itemCustomIncludeFieldName(it) == fieldName }
     if (customDefinition != null) {
-        ItemFunctionSwitchRow(
-            title = "${customDefinition.name}计入总价值",
-            checked = when (val value = viewModel.getFieldValue(fieldName)) {
-                is Boolean -> value
-                else -> true
-            },
-            onCheckedChange = { viewModel.saveFieldValue(fieldName, it) }
-        )
+        val content: @Composable () -> Unit = {
+            ItemFunctionSwitchRow(
+                title = "${customDefinition.name}计入全局总价值",
+                checked = when (val value = viewModel.getFieldValue(fieldName)) {
+                    is Boolean -> value
+                    else -> true
+                },
+                onCheckedChange = { viewModel.saveFieldValue(fieldName, it) }
+            )
+        }
+        if (locked) {
+            content()
+        } else {
+            SwipeRevealDeleteContainer(onDeleteClick = onDelete, content = content)
+        }
+        return
+    }
+
+    val outputDefinitionId = itemRuleOutputDefinitionId(fieldName)
+    val outputKey = itemRuleOutputKey(fieldName)
+    if (outputDefinitionId != null && outputKey != null) {
+        val definition = customDefinitions.firstOrNull { it.id == outputDefinitionId }
+        val outputState = definition?.let {
+            itemResolveRuleOutputState(
+                definition = it,
+                outputKey = outputKey,
+                viewModel = viewModel,
+                allDefinitions = customDefinitions,
+                ruleDefinitions = ruleDefinitions,
+            )
+        }
+        val content: @Composable () -> Unit = {
+            ItemReadonlyRuleOutputCard(
+                title = outputState?.title ?: outputKey,
+                value = outputState?.value.orEmpty(),
+                placeholder = outputState?.placeholder ?: "待规则结果生成",
+                supportText = outputState?.supportText,
+            )
+        }
+        if (locked) {
+            content()
+        } else {
+            SwipeRevealDeleteContainer(onDeleteClick = onDelete, content = content)
+        }
         return
     }
 
@@ -1519,6 +1637,13 @@ fun ItemFunctionFieldItem(
     }
 }
 
+data class ItemReadonlyRuleOutputState(
+    val title: String,
+    val value: String,
+    val placeholder: String,
+    val supportText: String? = null,
+)
+
 @Composable
 fun ItemFunctionSwitchRow(
     title: String,
@@ -1544,6 +1669,52 @@ fun ItemFunctionSwitchRow(
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
             Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
+    }
+}
+
+@Composable
+fun ItemReadonlyRuleOutputCard(
+    title: String,
+    value: String,
+    placeholder: String,
+    supportText: String? = null
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.10f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = value.ifBlank { placeholder },
+                style = if (value.isBlank()) {
+                    MaterialTheme.typography.bodyMedium
+                } else {
+                    MaterialTheme.typography.titleMedium
+                },
+                color = if (value.isBlank()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+            )
+            supportText?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -1606,224 +1777,6 @@ fun ItemPriceField(
     }
 }
 
-@Composable
-fun ItemPriceAttributeBlock(
-    definition: CustomAttributeDefinitionEntity,
-    value: PriceAttributeValue,
-    onValueChange: (PriceAttributeValue) -> Unit
-) {
-    val supportedActions = remember(definition) {
-        LegacyPriceFieldSupport.parseSupportedActions(definition.supportedActions)
-    }
-    
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = definition.name,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        
-        ItemNumberWithUnitField(
-            label = "金额",
-            value = value.amount?.toString() ?: "",
-            unit = value.currency ?: definition.defaultCurrency ?: "CNY",
-            units = itemCurrencyOptions(),
-            hint = "请输入金额",
-            onValueChange = { 
-                onValueChange(value.copy(amount = it.toDoubleOrNull())) 
-            },
-            onUnitChange = { 
-                onValueChange(value.copy(currency = it)) 
-            }
-        )
-        
-        val context = LocalContext.current
-        val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
-        val dateText = value.date?.let { dateFormat.format(Date(it)) } ?: ""
-        
-        ItemFieldLabel(label = "日期")
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    val calendar = Calendar.getInstance().apply {
-                        value.date?.let { timeInMillis = it }
-                    }
-                    DatePickerDialog(
-                        context,
-                        { _, year, month, dayOfMonth ->
-                            val cal = Calendar.getInstance()
-                            cal.set(year, month, dayOfMonth)
-                            onValueChange(value.copy(date = cal.timeInMillis))
-                        },
-                        calendar.get(Calendar.YEAR),
-                        calendar.get(Calendar.MONTH),
-                        calendar.get(Calendar.DAY_OF_MONTH)
-                    ).show()
-                },
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.12f)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (dateText.isBlank()) "点击选择日期" else dateText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (dateText.isBlank()) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                )
-                Icon(Icons.Default.CalendarMonth, contentDescription = null)
-            }
-        }
-        
-        supportedActions.forEach { action ->
-            when (action) {
-                CustomAttributeDefinitionEntity.ACTION_INCLUDE_IN_TOTAL -> {
-                    ItemAttributeActionRow(
-                        title = "计入总价",
-                        checked = value.actions.includeInTotal ?: false,
-                        onCheckedChange = { 
-                            onValueChange(
-                                value.copy(actions = value.actions.copy(includeInTotal = it))
-                            ) 
-                        }
-                    )
-                }
-                CustomAttributeDefinitionEntity.ACTION_INCLUDE_IN_AVERAGE -> {
-                    ItemAttributeActionRow(
-                        title = "参与均价计算",
-                        checked = value.actions.includeInAverage ?: false,
-                        onCheckedChange = { 
-                            onValueChange(
-                                value.copy(actions = value.actions.copy(includeInAverage = it))
-                            ) 
-                        }
-                    )
-                }
-                CustomAttributeDefinitionEntity.ACTION_INCLUDE_IN_DAILY_VALUE -> {
-                    ItemAttributeActionRow(
-                        title = "参与日均价值计算",
-                        checked = value.actions.includeInDailyValue ?: false,
-                        onCheckedChange = { 
-                            onValueChange(
-                                value.copy(actions = value.actions.copy(includeInDailyValue = it))
-                            ) 
-                        }
-                    )
-                }
-            }
-        }
-        
-        if (definition.supportsRecurrence == true) {
-            ItemFunctionSwitchRow(
-                title = "周期性价格",
-                checked = value.recurrence.isRecurring ?: false,
-                onCheckedChange = { 
-                    onValueChange(
-                        value.copy(recurrence = value.recurrence.copy(isRecurring = it))
-                    ) 
-                }
-            )
-            
-            if (value.recurrence.isRecurring == true) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ItemSegmentedChoiceField(
-                        label = "周期类型",
-                        value = value.recurrence.recurrenceType ?: "MONTH",
-                        options = listOf("DAY", "WEEK", "MONTH", "QUARTER", "YEAR"),
-                        optionLabels = mapOf(
-                            "DAY" to "日",
-                            "WEEK" to "周",
-                            "MONTH" to "月",
-                            "QUARTER" to "季度",
-                            "YEAR" to "年"
-                        ),
-                        onValueChange = { 
-                            onValueChange(
-                                value.copy(recurrence = value.recurrence.copy(recurrenceType = it))
-                            ) 
-                        }
-                    )
-                    
-                    ItemFunctionSwitchRow(
-                        title = "自动续费",
-                        checked = value.recurrence.autoRenew ?: false,
-                        onCheckedChange = { 
-                            onValueChange(
-                                value.copy(recurrence = value.recurrence.copy(autoRenew = it))
-                            ) 
-                        }
-                    )
-                    
-                    if (value.recurrence.autoRenew == true) {
-                        val nextChargeDateText = value.recurrence.nextChargeDate?.let { 
-                            dateFormat.format(Date(it)) 
-                        } ?: ""
-                        
-                        ItemFieldLabel(label = "下次扣费日")
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val calendar = Calendar.getInstance().apply {
-                                        value.recurrence.nextChargeDate?.let { timeInMillis = it }
-                                    }
-                                    DatePickerDialog(
-                                        context,
-                                        { _, year, month, dayOfMonth ->
-                                            val cal = Calendar.getInstance()
-                                            cal.set(year, month, dayOfMonth)
-                                            onValueChange(
-                                                value.copy(
-                                                    recurrence = value.recurrence.copy(
-                                                        nextChargeDate = cal.timeInMillis
-                                                    )
-                                                )
-                                            )
-                                        },
-                                        calendar.get(Calendar.YEAR),
-                                        calendar.get(Calendar.MONTH),
-                                        calendar.get(Calendar.DAY_OF_MONTH)
-                                    ).show()
-                                },
-                            shape = RoundedCornerShape(18.dp),
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.12f)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (nextChargeDateText.isBlank()) "点击选择日期" else nextChargeDateText,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = if (nextChargeDateText.isBlank()) {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
-                                )
-                                Icon(Icons.Default.CalendarMonth, contentDescription = null)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun itemCurrencyOptions(): List<String> {
     return listOf("CNY", "USD", "EUR", "JPY", "GBP", "HKD", "TWD")
 }
@@ -1964,7 +1917,7 @@ fun ItemPeriodField(
         label = label,
         value = value,
         unit = unit,
-        units = if (units.isEmpty()) listOf("月") else units,
+        units = if (units.isEmpty()) listOf("年", "月", "日") else units,
         hint = "例如 12",
         onValueChange = onValueChange,
         onUnitChange = onUnitChange
@@ -2082,7 +2035,7 @@ fun ItemStructuredLocationFields(viewModel: BaseItemViewModel) {
     ItemTextValueField(
         label = "具体位置",
         value = sublocation,
-        hint = "例如左侧第二层 / 相机层",
+        hint = "例如左侧第二层 / 相机包",
         onValueChange = {
             viewModel.saveFieldValue("位置_sublocation", it)
             syncItemStructuredLocation(viewModel, area, container, it)
@@ -2223,62 +2176,85 @@ fun ItemTagEditorField(
 
 @Composable
 fun ItemCustomAttributeField(
-    definition: CustomAttributeDefinitionEntity,
+    definition: AttributeDefinitionEntity,
     viewModel: BaseItemViewModel,
-    showFunctionControl: Boolean
+    showFunctionControl: Boolean,
+    readonlyDerived: Boolean = false,
 ) {
     val fieldKey = itemCustomFieldName(definition)
     val includeKey = itemCustomIncludeFieldName(definition)
 
-    when (definition.type) {
-        CustomAttributeDefinitionEntity.TYPE_TEXT -> ItemTextValueField(
+    if (readonlyDerived) {
+        val displayValue = itemDisplayValueForDerivedAttribute(definition, viewModel.getFieldValue(fieldKey), viewModel.getFieldValue("${fieldKey}_unit"))
+        ItemReadonlyRuleOutputCard(
+            title = definition.name,
+            value = displayValue,
+            placeholder = "待规则结果写入",
+            supportText = "该属性由规则自动写入，当前不可手动编辑",
+        )
+        return
+    }
+
+    when {
+        itemIsPriceAttribute(definition) -> {
+            val unitFieldKey = "${fieldKey}_unit"
+            ItemPriceField(
+                label = definition.name,
+                value = itemStringValue(viewModel.getFieldValue(fieldKey)),
+                currency = itemStringValue(viewModel.getFieldValue(unitFieldKey))
+                    .ifBlank { itemStringValue(viewModel.getFieldValue("币种")).ifBlank { "CNY" } },
+                onValueChange = { viewModel.saveFieldValue(fieldKey, it) },
+                onCurrencyChange = {
+                    viewModel.saveFieldValue(unitFieldKey, it)
+                    if (itemStringValue(viewModel.getFieldValue("币种")).isBlank()) {
+                        viewModel.saveFieldValue("币种", it)
+                    }
+                },
+                actionTitle = if (showFunctionControl) "不计入总价" else null,
+                actionChecked = !itemBooleanValue(viewModel.getFieldValue(includeKey)),
+                onActionCheckedChange = if (showFunctionControl) {
+                    { checked -> viewModel.saveFieldValue(includeKey, !checked) }
+                } else {
+                    null
+                }
+            )
+        }
+        definition.valueType == AttributeValueType.DATE -> ItemDateField(
             label = definition.name,
             value = itemStringValue(viewModel.getFieldValue(fieldKey)),
-            hint = "输入${definition.name}",
             onValueChange = { viewModel.saveFieldValue(fieldKey, it) }
         )
-        CustomAttributeDefinitionEntity.TYPE_DATE -> ItemDateField(
-            label = definition.name,
-            value = itemStringValue(viewModel.getFieldValue(fieldKey)),
-            onValueChange = { viewModel.saveFieldValue(fieldKey, it) }
-        )
-        CustomAttributeDefinitionEntity.TYPE_BOOLEAN -> ItemFunctionSwitchRow(
+        definition.valueType == AttributeValueType.BOOLEAN -> ItemFunctionSwitchRow(
             title = definition.name,
             checked = itemBooleanValue(viewModel.getFieldValue(fieldKey)),
             onCheckedChange = { viewModel.saveFieldValue(fieldKey, it) }
         )
-        CustomAttributeDefinitionEntity.TYPE_PRICE -> {
-            ItemNumberWithUnitField(
-                label = definition.name,
-                value = itemStringValue(viewModel.getFieldValue(fieldKey)),
-                unit = definition.unit.orEmpty().ifBlank {
-                    itemStringValue(viewModel.getFieldValue("币种")).ifBlank { "CNY" }
-                },
-                units = itemCurrencyOptions(),
-                hint = "输入金额",
-                onValueChange = { viewModel.saveFieldValue(fieldKey, it) },
-                onUnitChange = { }
-            )
-            if (showFunctionControl) {
-                val includeInTotal = when (val value = viewModel.getFieldValue(includeKey)) {
-                    is Boolean -> value
-                    else -> true
-                }
-                ItemAttributeActionRow(
-                    title = "不计入总价",
-                    checked = !includeInTotal,
-                    onCheckedChange = { viewModel.saveFieldValue(includeKey, !it) }
-                )
-            }
-        }
-        else -> ItemNumberWithUnitField(
+        definition.inputMode == AttributeInputMode.SINGLE_SELECT && definition.optionItemsJson.isNotBlank() -> ItemCompactSelectRow(
             label = definition.name,
             value = itemStringValue(viewModel.getFieldValue(fieldKey)),
-            unit = definition.unit.orEmpty().ifBlank { "-" },
-            units = listOf(definition.unit.orEmpty().ifBlank { "-" }),
-            hint = "输入数值",
-            onValueChange = { viewModel.saveFieldValue(fieldKey, it) },
-            onUnitChange = { }
+            placeholder = "请选择${definition.name}",
+            options = itemAttributeOptionItems(definition),
+            onValueSelected = { viewModel.saveFieldValue(fieldKey, it) }
+        )
+        definition.isMultiValue || definition.inputMode == AttributeInputMode.MULTI_SELECT || definition.inputMode == AttributeInputMode.TAG_INPUT -> ItemTextValueField(
+            label = definition.name,
+            value = itemStringValue(viewModel.getFieldValue(fieldKey)),
+            hint = itemAttributeMultiValueHint(definition),
+            onValueChange = { viewModel.saveFieldValue(fieldKey, it) }
+        )
+        definition.valueType == AttributeValueType.NUMBER -> ItemTextValueField(
+            label = definition.name,
+            value = itemStringValue(viewModel.getFieldValue(fieldKey)),
+            hint = "输入${definition.name}",
+            onValueChange = { input ->
+                viewModel.saveFieldValue(fieldKey, input.filter { ch -> ch.isDigit() || ch == '.' })
+            }
+        )
+        else -> ItemTextValueField(
+            label = definition.name,
+            value = itemStringValue(viewModel.getFieldValue(fieldKey)),
+            hint = "输入${definition.name}",
+            onValueChange = { viewModel.saveFieldValue(fieldKey, it) }
         )
     }
 }
@@ -2308,7 +2284,7 @@ fun ItemSectionAddButton(
 fun ItemFieldPickerSheet(
     title: String,
     availableFields: List<String>,
-    customAttributeDefinitions: List<CustomAttributeDefinitionEntity>,
+    customAttributeDefinitions: List<AttributeDefinitionEntity>,
     onDismiss: () -> Unit,
     onFieldSelected: (String) -> Unit
 ) {
@@ -2373,7 +2349,7 @@ fun ItemFieldPickerSheet(
                                     if (definition != null) {
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = "类型：${definition.type}",
+                                            text = "类型：${itemAttributeTypeLabel(definition)}",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -2425,7 +2401,7 @@ fun itemBuildSupplementFields(
     selectedFieldNames: Set<String>,
     defaultFields: List<String>,
     optionalFields: List<String>,
-    customAttributeDefinitions: List<CustomAttributeDefinitionEntity>
+    customAttributeDefinitions: List<AttributeDefinitionEntity>
 ): List<String> {
     return buildList {
         addAll(defaultFields)
@@ -2434,21 +2410,135 @@ fun itemBuildSupplementFields(
     }
 }
 
+fun itemBuildFormField(
+    group: String,
+    fieldName: String,
+    isSelected: Boolean = false,
+    order: Int = Field.getDefaultOrder(fieldName),
+    attributeDefinitions: List<AttributeDefinitionEntity> = emptyList(),
+): Field {
+    val definition = attributeDefinitions.firstOrNull { itemCustomFieldName(it) == fieldName }
+    return Field(
+        group = group,
+        name = fieldName,
+        isSelected = isSelected,
+        order = order,
+        customAttributeId = definition?.id,
+        ruleOutputDefinitionId = itemRuleOutputDefinitionId(fieldName),
+        ruleOutputKey = itemRuleOutputKey(fieldName),
+    )
+}
+
+fun itemEnrichFieldReference(
+    field: Field,
+    customAttributeDefinitions: List<AttributeDefinitionEntity>,
+): Field {
+    val customAttributeId = field.customAttributeId
+        ?: customAttributeDefinitions.firstOrNull { itemCustomFieldName(it) == field.name }?.id
+    val ruleOutputDefinitionId = field.ruleOutputDefinitionId ?: itemRuleOutputDefinitionId(field.name)
+    val ruleOutputKey = field.ruleOutputKey ?: itemRuleOutputKey(field.name)
+    if (
+        customAttributeId == field.customAttributeId &&
+        ruleOutputDefinitionId == field.ruleOutputDefinitionId &&
+        ruleOutputKey == field.ruleOutputKey
+    ) {
+        return field
+    }
+    return field.copy(
+        customAttributeId = customAttributeId,
+        ruleOutputDefinitionId = ruleOutputDefinitionId,
+        ruleOutputKey = ruleOutputKey,
+    )
+}
+
+fun itemResolveCustomAttributeId(
+    field: Field,
+    customAttributeDefinitions: List<AttributeDefinitionEntity>,
+): String? {
+    return field.customAttributeId
+        ?: customAttributeDefinitions.firstOrNull { itemCustomFieldName(it) == field.name }?.id
+}
+
+fun itemSelectedCustomAttributeIds(
+    selectedFields: Collection<Field>,
+    customAttributeDefinitions: List<AttributeDefinitionEntity>,
+): Set<String> {
+    return selectedFields
+        .mapNotNull { field -> itemResolveCustomAttributeId(field, customAttributeDefinitions) }
+        .toSet()
+}
+
+fun itemSelectedCustomDefinitions(
+    selectedFields: Collection<Field>,
+    customAttributeDefinitions: List<AttributeDefinitionEntity>,
+): List<AttributeDefinitionEntity> {
+    val selectedIds = itemSelectedCustomAttributeIds(selectedFields, customAttributeDefinitions)
+    return customAttributeDefinitions.filter { it.id in selectedIds }
+}
+
+fun itemSelectedFieldNames(selectedFields: Collection<Field>): Set<String> {
+    return selectedFields.map { it.name }.toSet()
+}
+
 fun itemBuildFunctionFields(
     selectedFieldNames: Set<String>,
     defaultFields: List<String>,
     optionalFields: List<String>,
-    selectedCustomDefinitions: List<CustomAttributeDefinitionEntity>
+    selectedCustomDefinitions: List<AttributeDefinitionEntity>
 ): List<String> {
     return buildList {
         addAll(defaultFields)
         addAll(optionalFields.filter { selectedFieldNames.contains(it) })
         addAll(
             selectedCustomDefinitions
-                .filter { it.type == CustomAttributeDefinitionEntity.TYPE_PRICE }
+                .filter(::itemSupportsIncludeInTotal)
                 .map { itemCustomIncludeFieldName(it) }
         )
     }
+}
+
+fun itemBuildReadonlyRuleOutputFields(
+    selectedFieldNames: Set<String>,
+    selectedAttributeIds: Set<String> = emptySet(),
+    allDefinitions: List<AttributeDefinitionEntity>,
+    ruleDefinitions: List<RuleDefinition> = emptyList(),
+): List<String> {
+    return resolveRuleOutputProjections(
+        selectedFieldNames = selectedFieldNames,
+        selectedAttributeIds = selectedAttributeIds,
+        allAttributes = allDefinitions,
+        fieldNameProvider = ::itemCustomFieldName,
+        ruleDefinitions = ruleDefinitions,
+    ).mapNotNull { projection ->
+        if (projection.targetType == RuleOutputTargetType.ATTRIBUTE_VALUE) {
+            null
+        } else {
+            itemRuleOutputFieldName(projection.attributeId, projection.outputKey)
+        }
+    }
+}
+
+fun itemResolveDerivedAttributeFieldNames(
+    selectedFieldNames: Set<String>,
+    selectedAttributeIds: Set<String> = emptySet(),
+    allDefinitions: List<AttributeDefinitionEntity>,
+    ruleDefinitions: List<RuleDefinition> = emptyList(),
+): Set<String> {
+    return resolveRuleOutputProjections(
+        selectedFieldNames = selectedFieldNames,
+        selectedAttributeIds = selectedAttributeIds,
+        allAttributes = allDefinitions,
+        fieldNameProvider = ::itemCustomFieldName,
+        ruleDefinitions = ruleDefinitions,
+    )
+        .mapNotNull { projection ->
+            if (projection.targetType == RuleOutputTargetType.ATTRIBUTE_VALUE) {
+                projection.targetFieldName
+            } else {
+                null
+            }
+        }
+        .toSet()
 }
 
 fun itemAddFieldToSection(
@@ -2458,14 +2548,60 @@ fun itemAddFieldToSection(
 ) {
     val current = viewModel.selectedFields.value?.toMutableSet() ?: mutableSetOf()
     if (current.any { it.name == fieldName }) return
-    current.add(
-        Field(
-            group = group,
-            name = fieldName,
-            isSelected = true
-        )
-    )
+    current.add(itemBuildFormField(group = group, fieldName = fieldName, isSelected = true))
     viewModel.setSelectedFields(current)
+}
+
+data class ItemFieldAddResult(
+    val addedFieldNames: List<String>,
+    val autoAddedFieldNames: List<String>,
+    val readonlyOutputs: List<String>,
+)
+
+data class ItemFieldRemovalResult(
+    val removed: Boolean,
+    val blockedByFieldNames: List<String> = emptyList(),
+)
+
+fun itemAddFieldToSection(
+    viewModel: BaseItemViewModel,
+    fieldName: String,
+    group: String,
+    attributeDefinitions: List<AttributeDefinitionEntity>,
+    ruleDefinitions: List<RuleDefinition> = emptyList(),
+): ItemFieldAddResult {
+    val current = viewModel.selectedFields.value?.toMutableSet() ?: mutableSetOf()
+    val currentFieldNames = current.map { it.name }
+    val currentAttributeIds = itemSelectedCustomAttributeIds(current, attributeDefinitions)
+    val expansion = expandAttributeFieldSelectionWithRules(
+        selectedFieldNames = currentFieldNames + fieldName,
+        selectedAttributeIds = currentAttributeIds,
+        allAttributes = attributeDefinitions,
+        fieldNameProvider = ::itemCustomFieldName,
+        ruleDefinitions = ruleDefinitions,
+    )
+    val fieldsToAdd = expansion.resolvedFieldNames.filterNot { candidate ->
+        current.any { it.name == candidate }
+    }
+    fieldsToAdd.forEach { candidate ->
+        current.add(
+            itemBuildFormField(
+                group = group,
+                fieldName = candidate,
+                isSelected = true,
+                attributeDefinitions = attributeDefinitions,
+            )
+        )
+    }
+    if (fieldsToAdd.isNotEmpty()) {
+        viewModel.setSelectedFields(current)
+    }
+    return ItemFieldAddResult(
+        addedFieldNames = fieldsToAdd,
+        autoAddedFieldNames = expansion.autoAddedFieldNames
+            .filter { it != fieldName && fieldsToAdd.contains(it) },
+        readonlyOutputs = expansion.readonlyOutputs,
+    )
 }
 
 fun itemRemoveFieldFromCurrentForm(
@@ -2475,12 +2611,16 @@ fun itemRemoveFieldFromCurrentForm(
     val current = viewModel.selectedFields.value?.filterNot { it.name == fieldName }?.toSet().orEmpty()
     viewModel.setSelectedFields(current)
     when {
+        fieldName.startsWith("custom_rule_output_") -> {
+            viewModel.clearFieldValue(fieldName)
+        }
         fieldName.startsWith("custom_") -> {
             viewModel.clearFieldValue(fieldName)
-            val parts = fieldName.split("_", limit = 3)
-            val defId = parts.getOrNull(1)
+            viewModel.clearFieldValue("${fieldName}_unit")
+            val defId = parseCustomAttributeId(fieldName)
             if (!defId.isNullOrBlank()) {
-                viewModel.clearFieldValue("custom_include_$defId")
+                viewModel.clearFieldValue(itemCustomIncludeFieldName(defId))
+                viewModel.clearFieldValue(itemCustomMetaTypeFieldName(defId))
             }
         }
         fieldName == "位置" -> {
@@ -2506,12 +2646,60 @@ fun itemRemoveFieldFromCurrentForm(
     }
 }
 
+fun itemFindRuleDependentsForField(
+    fieldName: String,
+    targetAttributeId: String? = null,
+    selectedFieldNames: Collection<String>,
+    selectedAttributeIds: Collection<String> = emptyList(),
+    attributeDefinitions: List<AttributeDefinitionEntity>,
+    ruleDefinitions: List<RuleDefinition> = emptyList(),
+): List<String> {
+    return findRequiredBySelectedFieldNames(
+        targetFieldName = fieldName,
+        targetAttributeId = targetAttributeId,
+        selectedFieldNames = selectedFieldNames,
+        selectedAttributeIds = selectedAttributeIds,
+        allAttributes = attributeDefinitions,
+        fieldNameProvider = ::itemCustomFieldName,
+        ruleDefinitions = ruleDefinitions,
+    )
+}
+
+fun itemRemoveFieldFromCurrentForm(
+    viewModel: BaseItemViewModel,
+    fieldName: String,
+    attributeDefinitions: List<AttributeDefinitionEntity>,
+    ruleDefinitions: List<RuleDefinition> = emptyList(),
+): ItemFieldRemovalResult {
+    val selectedFields = viewModel.selectedFields.value.orEmpty()
+    val selectedFieldNames = selectedFields.map { it.name }
+    val selectedAttributeIds = itemSelectedCustomAttributeIds(selectedFields, attributeDefinitions)
+    val targetAttributeId = selectedFields.firstOrNull { it.name == fieldName }?.customAttributeId
+        ?: attributeDefinitions.firstOrNull { itemCustomFieldName(it) == fieldName }?.id
+    val blockers = itemFindRuleDependentsForField(
+        fieldName = fieldName,
+        targetAttributeId = targetAttributeId,
+        selectedFieldNames = selectedFieldNames,
+        selectedAttributeIds = selectedAttributeIds,
+        attributeDefinitions = attributeDefinitions,
+        ruleDefinitions = ruleDefinitions,
+    )
+    if (blockers.isNotEmpty()) {
+        return ItemFieldRemovalResult(
+            removed = false,
+            blockedByFieldNames = blockers,
+        )
+    }
+    itemRemoveFieldFromCurrentForm(viewModel, fieldName)
+    return ItemFieldRemovalResult(removed = true)
+}
+
 fun itemDisplayNameForField(
     fieldName: String,
-    definition: CustomAttributeDefinitionEntity?
+    definition: AttributeDefinitionEntity?
 ): String {
     return when {
-        definition != null && fieldName == itemCustomIncludeFieldName(definition) -> "${definition.name}计入总价值"
+        definition != null && fieldName == itemCustomIncludeFieldName(definition) -> "${definition.name}计入全局总价值"
         definition != null -> definition.name
         fieldName == "单价" -> "购入价格"
         fieldName == "不计入总数量" -> "不计入物品总数量"
@@ -2519,12 +2707,379 @@ fun itemDisplayNameForField(
     }
 }
 
-fun itemCustomFieldName(definition: CustomAttributeDefinitionEntity): String {
-    return "custom_${definition.id}_${definition.name}"
+fun itemCustomFieldName(definition: AttributeDefinitionEntity): String {
+    return itemLegacyFieldName(definition) ?: "custom_${definition.id}"
 }
 
-fun itemCustomIncludeFieldName(definition: CustomAttributeDefinitionEntity): String {
-    return "custom_include_${definition.id}"
+fun itemCustomIncludeFieldName(definition: AttributeDefinitionEntity): String {
+    return itemCustomIncludeFieldName(definition.id)
+}
+
+fun itemCustomIncludeFieldName(definitionId: String): String {
+    return "custom_include_$definitionId"
+}
+
+fun itemCustomMetaTypeFieldName(definitionId: String): String {
+    return "custom_meta_${definitionId}_type"
+}
+
+fun itemRuleOutputFieldName(definitionId: String, outputKey: String): String {
+    return "custom_rule_output_${definitionId}_${itemNormalizeOutputKey(outputKey)}"
+}
+
+fun itemRuleOutputDefinitionId(fieldName: String): String? {
+    if (!fieldName.startsWith("custom_rule_output_")) {
+        return null
+    }
+    val payload = fieldName.removePrefix("custom_rule_output_")
+    val separatorIndex = payload.lastIndexOf('_')
+    return payload.takeIf { separatorIndex > 0 }?.substring(0, separatorIndex)
+}
+
+fun itemRuleOutputKey(fieldName: String): String? {
+    if (!fieldName.startsWith("custom_rule_output_")) {
+        return null
+    }
+    val payload = fieldName.removePrefix("custom_rule_output_")
+    val separatorIndex = payload.lastIndexOf('_')
+    if (separatorIndex <= 0 || separatorIndex >= payload.lastIndex) {
+        return null
+    }
+    val normalizedKey = payload.substring(separatorIndex + 1)
+    return itemRestoreOutputKey(normalizedKey)
+}
+
+fun itemLegacyFieldName(definition: AttributeDefinitionEntity): String? {
+    return LEGACY_BOUND_ATTRIBUTE_FIELD_BY_KEY[definition.key]
+}
+
+fun itemUsesLegacyItemField(definition: AttributeDefinitionEntity): Boolean {
+    return itemLegacyFieldName(definition) != null
+}
+
+fun itemIsBaseIntrinsicField(fieldName: String): Boolean {
+    return fieldName in ITEM_BASE_REQUIRED_FIELDS || fieldName in ITEM_BASE_OPTIONAL_FIELDS
+}
+
+fun parseCustomAttributeId(fieldName: String): String? {
+    return when {
+        fieldName.startsWith("custom_include_") -> fieldName.removePrefix("custom_include_").takeIf { it.isNotBlank() }
+        fieldName.startsWith("custom_") -> fieldName.removePrefix("custom_").takeIf { it.isNotBlank() }
+        else -> null
+    }
+}
+
+fun itemAttributeTypeKey(definition: AttributeDefinitionEntity): String {
+    return when {
+        itemIsPriceAttribute(definition) -> "PRICE"
+        definition.valueType == AttributeValueType.DATE -> "DATE"
+        definition.valueType == AttributeValueType.BOOLEAN -> "BOOLEAN"
+        definition.valueType == AttributeValueType.NUMBER -> "NUMBER"
+        else -> "TEXT"
+    }
+}
+
+fun itemAttributeTypeLabel(definition: AttributeDefinitionEntity): String {
+    return when (itemAttributeTypeKey(definition)) {
+        "PRICE" -> "金额"
+        "DATE" -> "日期"
+        "BOOLEAN" -> "开关"
+        "NUMBER" -> "数字"
+        else -> "文本"
+    }
+}
+
+private fun itemResolveRuleOutputState(
+    definition: AttributeDefinitionEntity,
+    outputKey: String,
+    viewModel: BaseItemViewModel,
+    allDefinitions: List<AttributeDefinitionEntity>,
+    ruleDefinitions: List<RuleDefinition>,
+): ItemReadonlyRuleOutputState {
+    val binding = itemParseRuleBindings(definition.ruleBindingsJson)
+        .firstOrNull { candidate ->
+            candidate.outputKeys.any { it.trim() == outputKey.trim() }
+        }
+        ?: return ItemReadonlyRuleOutputState(
+            title = outputKey,
+            value = "",
+            placeholder = "未找到对应的规则绑定",
+            supportText = definition.name,
+        )
+    val rule = ruleDefinitions.firstOrNull { it.id == binding.ruleId || it.key == binding.ruleId }
+        ?: return ItemReadonlyRuleOutputState(
+            title = outputKey,
+            value = "",
+            placeholder = "未找到规则定义，当前无法计算",
+            supportText = binding.ruleId,
+        )
+    val runtimeOutput = evaluateRuleRuntimeOutput(
+        RuleRuntimeEvaluationContext(
+            triggerDefinition = definition,
+            rule = rule,
+            binding = binding,
+            outputKey = outputKey,
+            allDefinitions = allDefinitions,
+            fieldNameProvider = ::itemCustomFieldName,
+            fieldValueProvider = viewModel::getFieldValue,
+            systemValueProvider = { key -> viewModel.getRuntimeSystemValue(key) },
+        )
+    )
+    val supportText = buildList {
+        runtimeOutput.supportText?.takeIf { it.isNotBlank() }?.let(::add)
+        when (runtimeOutput.targetType) {
+            RuleOutputTargetType.READONLY_RESULT -> Unit
+            RuleOutputTargetType.ATTRIBUTE_VALUE -> add("结果会自动写入属性字段")
+            RuleOutputTargetType.SYSTEM_VARIABLE -> {
+                add(runtimeOutput.systemVariableKey?.displayName?.let { "结果会写入$it" } ?: "结果会写入系统变量")
+            }
+        }
+    }.joinToString(" / ").ifBlank { null }
+    return ItemReadonlyRuleOutputState(
+        title = runtimeOutput.title,
+        value = runtimeOutput.value,
+        placeholder = runtimeOutput.placeholder,
+        supportText = supportText,
+    )
+}
+
+fun itemApplyRuleRuntimeOutputs(
+    viewModel: BaseItemViewModel,
+    selectedFieldNames: Set<String>,
+    selectedAttributeIds: Set<String> = emptySet(),
+    allDefinitions: List<AttributeDefinitionEntity>,
+    ruleDefinitions: List<RuleDefinition>,
+) {
+    if (selectedFieldNames.isEmpty() || allDefinitions.isEmpty() || ruleDefinitions.isEmpty()) {
+        return
+    }
+    repeat(3) {
+        val projections = resolveRuleOutputProjections(
+            selectedFieldNames = selectedFieldNames,
+            selectedAttributeIds = selectedAttributeIds,
+            allAttributes = allDefinitions,
+            fieldNameProvider = ::itemCustomFieldName,
+            ruleDefinitions = ruleDefinitions,
+        )
+        val fieldUpdates = linkedMapOf<String, Any?>()
+        val systemUpdates = linkedMapOf<SystemVariableKey, Any?>()
+        projections.forEach { projection ->
+            val definition = allDefinitions.firstOrNull { it.id == projection.attributeId } ?: return@forEach
+            val binding = itemParseRuleBindings(definition.ruleBindingsJson)
+                .firstOrNull { candidate ->
+                    candidate.outputKeys.any { it.trim() == projection.outputKey.trim() }
+                }
+                ?: return@forEach
+            val rule = ruleDefinitions.firstOrNull { it.id == binding.ruleId || it.key == binding.ruleId } ?: return@forEach
+            val runtimeOutput = evaluateRuleRuntimeOutput(
+                RuleRuntimeEvaluationContext(
+                    triggerDefinition = definition,
+                    rule = rule,
+                    binding = binding,
+                    outputKey = projection.outputKey,
+                    allDefinitions = allDefinitions,
+                    fieldNameProvider = ::itemCustomFieldName,
+                    fieldValueProvider = viewModel::getFieldValue,
+                    systemValueProvider = { key -> viewModel.getRuntimeSystemValue(key) },
+                )
+            )
+            when (projection.targetType) {
+                RuleOutputTargetType.READONLY_RESULT -> Unit
+                RuleOutputTargetType.ATTRIBUTE_VALUE -> {
+                    val targetDefinition = projection.targetAttributeId
+                        ?.let { targetId -> allDefinitions.firstOrNull { it.id == targetId } }
+                        ?: projection.targetFieldName?.let { targetFieldName ->
+                            allDefinitions.firstOrNull { itemCustomFieldName(it) == targetFieldName }
+                        }
+                    val targetFieldName = projection.targetFieldName
+                        ?: targetDefinition?.let(::itemCustomFieldName)
+                    targetFieldName?.let {
+                        itemBuildAttributeTargetUpdates(
+                            definition = targetDefinition,
+                            fieldName = it,
+                            runtimeOutput = runtimeOutput,
+                        ).forEach { (key, value) ->
+                            fieldUpdates[key] = value
+                        }
+                    }
+                }
+
+                RuleOutputTargetType.SYSTEM_VARIABLE -> {
+                    projection.systemVariableKey?.let { key ->
+                        systemUpdates[key] = itemBuildSystemTargetValue(key, runtimeOutput.value)
+                    }
+                }
+            }
+        }
+        if (!viewModel.applyRuleRuntimeState(fieldUpdates, systemUpdates)) {
+            return
+        }
+    }
+}
+
+private fun itemParseRuleBindings(ruleBindingsJson: String): List<RuleBinding> {
+    if (ruleBindingsJson.isBlank()) {
+        return emptyList()
+    }
+    return runCatching {
+        val type = object : TypeToken<List<RuleBinding>>() {}.type
+        Gson().fromJson<List<RuleBinding>>(ruleBindingsJson, type)
+            ?.filter { it.ruleId.isNotBlank() }
+            .orEmpty()
+    }.getOrElse { emptyList() }
+}
+
+private fun itemBuildAttributeTargetUpdates(
+    definition: AttributeDefinitionEntity?,
+    fieldName: String,
+    runtimeOutput: RuleRuntimeOutputState,
+): Map<String, Any?> {
+    if (definition == null) {
+        return mapOf(fieldName to runtimeOutput.value.ifBlank { null })
+    }
+    return when {
+        itemIsPriceAttribute(definition) -> {
+            val (amount, unit) = itemSplitAmountAndUnit(runtimeOutput.value)
+            mapOf(
+                fieldName to amount,
+                "${fieldName}_unit" to unit,
+            )
+        }
+
+        definition.valueType == AttributeValueType.NUMBER -> {
+            mapOf(fieldName to itemNumericValue(runtimeOutput.value)?.let { itemFormatNumericInput(it) })
+        }
+
+        definition.valueType == AttributeValueType.BOOLEAN -> {
+            mapOf(fieldName to itemBooleanValueFromText(runtimeOutput.value))
+        }
+
+        else -> mapOf(fieldName to runtimeOutput.value.ifBlank { null })
+    }
+}
+
+private fun itemBuildSystemTargetValue(
+    key: SystemVariableKey,
+    rawValue: String,
+): Any? {
+    val definition = findSystemVariableDefinition(key)
+    return when (definition?.valueType) {
+        AttributeValueType.NUMBER -> itemNumericValue(rawValue)
+        AttributeValueType.BOOLEAN -> itemBooleanValueFromText(rawValue)
+        else -> rawValue.ifBlank { null }
+    }
+}
+
+private fun itemDisplayValueForDerivedAttribute(
+    definition: AttributeDefinitionEntity,
+    value: Any?,
+    unitValue: Any?,
+): String {
+    return when {
+        itemIsPriceAttribute(definition) -> {
+            val amount = itemStringValue(value)
+            val unit = itemStringValue(unitValue)
+            listOf(amount, unit).filter { it.isNotBlank() }.joinToString(" ").ifBlank { "" }
+        }
+
+        definition.valueType == AttributeValueType.BOOLEAN -> {
+            if (itemBooleanValue(value)) "是" else ""
+        }
+
+        else -> itemStringValue(value)
+    }
+}
+
+private fun itemSplitAmountAndUnit(rawValue: String): Pair<String?, String?> {
+    val normalized = rawValue.trim()
+    if (normalized.isBlank()) {
+        return null to null
+    }
+    val match = Regex("^([-+]?\\d+(?:\\.\\d+)?)\\s*(.*)$").find(normalized)
+    val amount = match?.groupValues?.getOrNull(1)?.trim().orEmpty().ifBlank { normalized }
+    val unit = match?.groupValues?.getOrNull(2)?.trim().orEmpty().ifBlank { null }
+    return amount to unit
+}
+
+private fun itemFormatNumericInput(value: Double): String {
+    return if (value == value.toLong().toDouble()) {
+        value.toLong().toString()
+    } else {
+        String.format(Locale.getDefault(), "%.2f", value)
+    }
+}
+
+private fun itemBooleanValueFromText(rawValue: String): Boolean {
+    return rawValue.trim().lowercase(Locale.ROOT) in setOf("true", "1", "yes", "y", "是", "开")
+}
+
+private fun itemNumericValue(value: Any?): Double? {
+    return when (value) {
+        is Number -> value.toDouble()
+        is String -> value.trim().toDoubleOrNull()
+        is Pair<*, *> -> value.first?.toString()?.trim()?.toDoubleOrNull()
+        else -> null
+    }
+}
+
+private fun itemDateValue(value: Any?): Date? {
+    val raw = when (value) {
+        is Date -> return value
+        is String -> value
+        is Pair<*, *> -> value.first?.toString().orEmpty()
+        else -> return null
+    }.trim()
+    if (raw.isBlank()) {
+        return null
+    }
+    return runCatching {
+        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(raw)
+    }.getOrNull()
+}
+
+private fun itemNormalizeOutputKey(outputKey: String): String {
+    return outputKey.trim().lowercase(Locale.ROOT)
+        .replace(Regex("[^a-z0-9\\u4e00-\\u9fa5]+"), "_")
+        .trim('_')
+}
+
+private fun itemRestoreOutputKey(normalizedKey: String): String {
+    return when (normalizedKey) {
+        itemNormalizeOutputKey("待付尾款") -> "待付尾款"
+        itemNormalizeOutputKey("平均价值") -> "平均价值"
+        itemNormalizeOutputKey("已支付金额") -> "已支付金额"
+        itemNormalizeOutputKey("已支付次数") -> "已支付次数"
+        itemNormalizeOutputKey("计入总价") -> "计入总价"
+        else -> normalizedKey
+    }
+}
+
+fun itemIsPriceAttribute(definition: AttributeDefinitionEntity): Boolean {
+    return definition.valueType == AttributeValueType.NUMBER &&
+        definition.inputMode == AttributeInputMode.PRICE_INPUT
+}
+
+fun itemSupportsIncludeInTotal(definition: AttributeDefinitionEntity): Boolean {
+    return itemIsPriceAttribute(definition)
+}
+
+private fun itemAttributeOptionItems(definition: AttributeDefinitionEntity): List<String> {
+    return runCatching {
+        val type = object : TypeToken<List<String>>() {}.type
+        Gson().fromJson<List<String>>(definition.optionItemsJson, type)
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+    }.getOrElse { emptyList() }
+}
+
+private fun itemAttributeMultiValueHint(definition: AttributeDefinitionEntity): String {
+    val options = itemAttributeOptionItems(definition)
+    return if (options.isEmpty()) {
+        "多个值请用逗号分隔"
+    } else {
+        "可选：${options.joinToString(" / ")}，多个值请用逗号分隔"
+    }
 }
 
 fun itemStringValue(value: Any?): String {

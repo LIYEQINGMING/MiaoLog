@@ -6,6 +6,7 @@ import android.util.Log
 import com.amap.api.location.AMapLocationClient
 import com.example.itemmanagement.data.AppDatabase
 import com.example.itemmanagement.data.repository.UnifiedItemRepository
+import com.example.itemmanagement.data.repository.AppSystemSourceRepository
 import com.example.itemmanagement.data.repository.ReminderSettingsRepository
 import com.example.itemmanagement.data.repository.WarrantyRepository
 import com.example.itemmanagement.data.repository.BorrowRepository
@@ -35,6 +36,7 @@ class ItemManagementApplication : Application() {
             database.shoppingDetailDao(),
             database.shoppingListDao(),
             database.inventoryDetailDao(),
+            database.itemRuleBindingDao(),
             database.locationDao(),
             database.tagDao(),
             database.photoDao(),
@@ -70,6 +72,13 @@ class ItemManagementApplication : Application() {
         AttributeRepository(
             database.attributeDefinitionDao(),
             database.ruleDefinitionDao()
+        )
+    }
+
+    val appSystemSourceRepository by lazy {
+        AppSystemSourceRepository(
+            unifiedItemRepository = repository,
+            userProfileRepository = userProfileRepository,
         )
     }
     

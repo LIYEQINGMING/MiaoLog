@@ -37,6 +37,7 @@ object TestDataInserter {
                     database.shoppingDetailDao(),
                     database.shoppingListDao(),
                     database.inventoryDetailDao(),
+                    database.itemRuleBindingDao(),
                     database.locationDao(),
                     database.tagDao(),
                     database.photoDao(),

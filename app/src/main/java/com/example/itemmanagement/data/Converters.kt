@@ -142,6 +142,16 @@ class Converters {
     }
 
     @TypeConverter
+    fun fromAttributeValueSource(value: com.example.itemmanagement.data.model.attribute.AttributeValueSource?): String? {
+        return value?.name
+    }
+
+    @TypeConverter
+    fun toAttributeValueSource(value: String?): com.example.itemmanagement.data.model.attribute.AttributeValueSource? {
+        return value?.let { com.example.itemmanagement.data.model.attribute.AttributeValueSource.valueOf(it) }
+    }
+
+    @TypeConverter
     fun fromAttributeOptionSource(value: com.example.itemmanagement.data.model.attribute.AttributeOptionSource?): String? {
         return value?.name
     }
@@ -170,4 +180,24 @@ class Converters {
     fun toRuleComputationType(value: String?): com.example.itemmanagement.data.model.attribute.RuleComputationType? {
         return value?.let { com.example.itemmanagement.data.model.attribute.RuleComputationType.valueOf(it) }
     }
-} 
+
+    @TypeConverter
+    fun fromRuleBindingStatus(value: com.example.itemmanagement.data.model.attribute.RuleBindingStatus?): String? {
+        return value?.name
+    }
+
+    @TypeConverter
+    fun toRuleBindingStatus(value: String?): com.example.itemmanagement.data.model.attribute.RuleBindingStatus? {
+        return value?.let { com.example.itemmanagement.data.model.attribute.RuleBindingStatus.valueOf(it) }
+    }
+
+    @TypeConverter
+    fun fromRuleBindingCreationSource(value: com.example.itemmanagement.data.model.attribute.RuleBindingCreationSource?): String? {
+        return value?.name
+    }
+
+    @TypeConverter
+    fun toRuleBindingCreationSource(value: String?): com.example.itemmanagement.data.model.attribute.RuleBindingCreationSource? {
+        return value?.let { com.example.itemmanagement.data.model.attribute.RuleBindingCreationSource.valueOf(it) }
+    }
+}

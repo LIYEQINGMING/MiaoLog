@@ -8,6 +8,7 @@ import com.example.itemmanagement.data.dao.PriceRecordDao
 import com.example.itemmanagement.data.dao.BorrowDao
 import com.example.itemmanagement.data.dao.FieldCustomValueDao
 import com.example.itemmanagement.data.dao.unified.InventoryDetailDao
+import com.example.itemmanagement.data.dao.unified.ItemRuleBindingDao
 import com.example.itemmanagement.data.dao.unified.ItemStateDao
 import com.example.itemmanagement.data.dao.unified.ShoppingDetailDao
 import com.example.itemmanagement.data.dao.ShoppingListDao
@@ -20,6 +21,7 @@ import com.example.itemmanagement.data.entity.FieldCustomValueEntity
 import com.example.itemmanagement.data.entity.PriceRecord
 import com.example.itemmanagement.data.entity.ShoppingItemPriority
 import com.example.itemmanagement.data.entity.UrgencyLevel
+import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
 import com.example.itemmanagement.data.entity.unified.InventoryDetailEntity
 import com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity
 import com.example.itemmanagement.data.entity.unified.ItemStateEntity
@@ -27,9 +29,16 @@ import com.example.itemmanagement.data.entity.unified.ItemStateType
 import com.example.itemmanagement.data.entity.unified.ItemStatusDefinitionEntity
 import com.example.itemmanagement.data.entity.unified.ShoppingDetailEntity
 import com.example.itemmanagement.data.entity.unified.UnifiedItemEntity
+import com.example.itemmanagement.data.entity.unified.toItemRuleBindingEntity
+import com.example.itemmanagement.data.entity.unified.toModel
 import com.example.itemmanagement.data.model.ItemStatus
 import com.example.itemmanagement.data.model.CategoryUsageSummary
 import com.example.itemmanagement.data.entity.BorrowStatus
+import com.example.itemmanagement.data.model.attribute.AppSystemSourceValue
+import com.example.itemmanagement.data.model.attribute.SystemVariableKey
+import com.example.itemmanagement.data.model.attribute.AttributeInputMode
+import com.example.itemmanagement.data.model.attribute.AttributeValueType
+import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
 import com.example.itemmanagement.data.view.InventoryItemView
 import com.example.itemmanagement.data.view.ShoppingItemView
 import com.example.itemmanagement.data.model.Item
@@ -58,6 +67,7 @@ class UnifiedItemRepository(
     private val shoppingDetailDao: ShoppingDetailDao,
     private val shoppingListDao: ShoppingListDao,
     private val inventoryDetailDao: InventoryDetailDao,
+    private val itemRuleBindingDao: ItemRuleBindingDao,
     // === 新增的DAO ===
     private val locationDao: LocationDao,
     private val tagDao: TagDao,
@@ -73,6 +83,32 @@ class UnifiedItemRepository(
     }
 
     private val gson = Gson()
+
+    fun getBaseCurrencyCode(): String = currencyConverter.getBaseCurrency()
+
+    fun setBaseCurrencyCode(currencyCode: String) {
+        currencyConverter.setBaseCurrency(currencyCode)
+    }
+
+    suspend fun getGlobalTotalValueSnapshot(): AppSystemSourceValue {
+        val globalStats = getAssetStatisticsFlow().first()
+        return AppSystemSourceValue(
+            variableKey = SystemVariableKey.GLOBAL_TOTAL_VALUE,
+            valueType = AttributeValueType.NUMBER,
+            numberValue = globalStats.totalValue,
+            unit = getBaseCurrencyCode(),
+            configValues = mapOf("currency" to getBaseCurrencyCode()),
+        )
+    }
+
+    suspend fun getGlobalTotalCountSnapshot(): AppSystemSourceValue {
+        val globalStats = getAssetStatisticsFlow().first()
+        return AppSystemSourceValue(
+            variableKey = SystemVariableKey.GLOBAL_TOTAL_COUNT,
+            valueType = AttributeValueType.NUMBER,
+            numberValue = globalStats.totalItems.toDouble(),
+        )
+    }
     
     private fun statusIdFor(type: ItemStateType): Long {
         return when (type) {
@@ -376,8 +412,8 @@ class UnifiedItemRepository(
         return appDatabase.itemCustomAttributeDao().getAttributesByItemId(itemId).first()
     }
 
-    suspend fun getAllCustomAttributeDefinitions(): List<com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity> {
-        return appDatabase.customAttributeDefinitionDao().getAllDefinitions().first()
+    suspend fun getAllAttributeDefinitions(): List<AttributeDefinitionEntity> {
+        return appDatabase.attributeDefinitionDao().getAllDefinitions().first()
     }
 
     suspend fun replaceCustomAttributes(itemId: Long, attributes: List<ItemCustomAttributeEntity>) {
@@ -385,6 +421,28 @@ class UnifiedItemRepository(
             appDatabase.itemCustomAttributeDao().deleteByItemId(itemId)
             if (attributes.isNotEmpty()) {
                 appDatabase.itemCustomAttributeDao().insertAll(attributes)
+            }
+        }
+    }
+
+    suspend fun getItemRuleBindingsByItemId(itemId: Long): List<RuleBindingInstance> {
+        return itemRuleBindingDao.getByItemId(itemId).map { it.toModel() }
+    }
+
+    suspend fun replaceItemRuleBindings(itemId: Long, bindings: List<RuleBindingInstance>) {
+        appDatabase.withTransaction {
+            itemRuleBindingDao.deleteByItemId(itemId)
+            if (bindings.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                itemRuleBindingDao.insertAll(
+                    bindings.map { binding ->
+                        binding.toItemRuleBindingEntity(
+                            itemId = itemId,
+                            createdAt = now,
+                            updatedAt = now,
+                        )
+                    }
+                )
             }
         }
     }
@@ -403,6 +461,11 @@ class UnifiedItemRepository(
         } else {
             "unit:$fieldName:$contextKey"
         }
+    }
+
+    private fun shouldTreatAsPriceAttribute(definition: AttributeDefinitionEntity): Boolean {
+        return definition.valueType == AttributeValueType.NUMBER &&
+            definition.inputMode == AttributeInputMode.PRICE_INPUT
     }
 
     suspend fun getStoredCustomOptions(fieldName: String, contextKey: String? = null): List<String> {
@@ -1233,13 +1296,12 @@ class UnifiedItemRepository(
             inventoryDetailDao.getAllDetails(),
             itemStateDao.getActiveStatesByType(statusIdFor(ItemStateType.INVENTORY)),
             appDatabase.itemCustomAttributeDao().getAllFlow(),
-            appDatabase.customAttributeDefinitionDao().getAllDefinitions()
+            appDatabase.attributeDefinitionDao().getAllDefinitions()
         ) { unifiedItems, inventoryDetails, inventoryStates, customAttrs, attrDefs ->
             val activeItemIds = inventoryStates.filter { it.isActive }.map { it.itemId }.toSet()
             val activeUnifiedItems = unifiedItems.filter { it.id in activeItemIds }
             
-            // Map definition ID to type
-            val priceDefIds = attrDefs.filter { it.type == com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity.TYPE_PRICE }.map { it.id }.toSet()
+            val priceDefIds = attrDefs.filter(::shouldTreatAsPriceAttribute).map { it.id }.toSet()
             
             var totalValue = 0.0
             var totalCount = 0
@@ -1309,8 +1371,8 @@ class UnifiedItemRepository(
             
             // Get custom attributes
             val customAttrs = appDatabase.itemCustomAttributeDao().getAllFlow().first()
-            val attrDefs = appDatabase.customAttributeDefinitionDao().getAllDefinitions().first()
-            val priceDefIds = attrDefs.filter { it.type == com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity.TYPE_PRICE }.map { it.id }.toSet()
+            val attrDefs = appDatabase.attributeDefinitionDao().getAllDefinitions().first()
+            val priceDefIds = attrDefs.filter(::shouldTreatAsPriceAttribute).map { it.id }.toSet()
             val customAttrsMap = customAttrs.filter { it.itemId in activeItemIds }.groupBy { it.itemId }
             
             activeItems.forEach { item ->

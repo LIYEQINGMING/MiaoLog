@@ -6,7 +6,10 @@ data class Field(
     val group: String,
     val name: String,
     var isSelected: Boolean = false,
-    val order: Int = getDefaultOrder(name)
+    val order: Int = getDefaultOrder(name),
+    val customAttributeId: String? = null,
+    val ruleOutputDefinitionId: String? = null,
+    val ruleOutputKey: String? = null,
 ) : Serializable {
     companion object {
         private const val serialVersionUID = 1L  // 添加序列化版本ID

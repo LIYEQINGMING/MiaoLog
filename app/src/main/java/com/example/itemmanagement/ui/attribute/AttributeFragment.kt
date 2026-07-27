@@ -17,7 +17,8 @@ class AttributeFragment : Fragment() {
 
     private val viewModel: AttributeManagementViewModel by viewModels {
         AttributeManagementViewModelFactory(
-            (requireActivity().application as ItemManagementApplication).attributeRepository
+            (requireActivity().application as ItemManagementApplication).attributeRepository,
+            (requireActivity().application as ItemManagementApplication).appSystemSourceRepository,
         )
     }
 
@@ -40,20 +41,34 @@ class AttributeFragment : Fragment() {
                     onCycleAttributeValueTypeFilter = viewModel::cycleAttributeValueTypeFilter,
                     onCycleAttributeRuleBindingFilter = viewModel::cycleAttributeRuleBindingFilter,
                     onClearAttributeFilters = viewModel::clearAttributeFilters,
+                    onCycleRuleSourceFilter = viewModel::cycleRuleSourceFilter,
+                    onCycleRuleManagementTypeFilter = viewModel::cycleRuleManagementTypeFilter,
+                    onCycleRuleUsageFilter = viewModel::cycleRuleUsageFilter,
+                    onClearRuleFilters = viewModel::clearRuleFilters,
                     onCycleTemplateTypeFilter = viewModel::cycleTemplateTypeFilter,
                     onCycleTemplateCategoryFilter = viewModel::cycleTemplateCategoryFilter,
                     onCycleRuleTypeFilter = viewModel::cycleRuleTypeFilter,
                     onClearTemplateFilters = viewModel::clearTemplateFilters,
                     onOpenCreateAttribute = viewModel::openCreateAttribute,
+                    onOpenCreateRule = viewModel::openCreateRule,
                     onOpenCreateFromTemplate = viewModel::openCreateFromTemplate,
                     onOpenAttributeDetail = viewModel::openAttributeDetail,
                     onOpenRuleDetail = viewModel::openRuleDetail,
                     onOpenTemplateDetail = viewModel::openTemplateDetail,
+                    onOpenEditAttribute = viewModel::openEditAttribute,
+                    onOpenEditRule = viewModel::openEditRule,
                     onCreateFromTemplate = viewModel::createFromTemplate,
+                    onCreateRuleFromTemplate = viewModel::createRuleFromTemplate,
                     onSaveAttributeDraft = viewModel::saveAttributeDraft,
+                    onOpenRuleBindingWizard = viewModel::openRuleBindingWizard,
+                    onSaveRuleBindingWizard = viewModel::saveRuleBindingWizard,
+                    onSaveRuleDraft = viewModel::saveRuleDraft,
                     onDeleteAttribute = viewModel::requestDeleteAttribute,
+                    onDeleteRule = viewModel::requestDeleteRule,
+                    onDeleteRuleById = viewModel::requestDeleteRule,
                     onDismissDialog = viewModel::dismissDialog,
                     onConfirmDeleteAttribute = viewModel::confirmDeleteAttribute,
+                    onConfirmDeleteRule = viewModel::confirmDeleteRule,
                     onMessageConsumed = viewModel::consumeMessage,
                 )
             }

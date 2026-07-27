@@ -7,10 +7,59 @@ data class RuleTemplate(
     val category: String,
     val kind: TemplateKind = TemplateKind.RULE,
     val computationType: RuleComputationType,
-    val inputRoles: List<String>,
-    val requiredDependencies: List<String> = emptyList(),
-    val optionalDependencies: List<String> = emptyList(),
-    val outputKeys: List<String> = emptyList(),
-    val defaultExpression: String? = null,
+    val triggerModes: List<RuleTriggerMode> = listOf(RuleTriggerMode.ON_VALUE_CHANGED),
+    val slots: List<RuleSlotDefinition>,
+    val defaultExpressionDefinition: RuleExpressionDefinition? = null,
+    val outputStrategies: List<RuleOutputStrategyDefinition> = emptyList(),
     val description: String? = null,
-)
+) {
+    val inputRoles: List<String>
+        get() = slots.filter { it.direction == RuleSlotDirection.INPUT }.map { it.key }
+
+    val requiredDependencies: List<String>
+        get() = slots.filter {
+            it.direction == RuleSlotDirection.INPUT &&
+                it.sourceType == RuleSlotSourceType.ATTRIBUTE_INPUT &&
+                it.isRequired
+        }.map { it.name }
+
+    val optionalDependencies: List<String>
+        get() = slots.filter {
+            it.direction == RuleSlotDirection.INPUT &&
+                it.sourceType == RuleSlotSourceType.ATTRIBUTE_INPUT &&
+                !it.isRequired
+        }.map { it.name }
+
+    val outputKeys: List<String>
+        get() = slots.filter { it.direction == RuleSlotDirection.OUTPUT }.map { it.key }
+
+    val systemInputs: List<RuleSystemInputDefinition>
+        get() = slots.filter {
+            it.direction == RuleSlotDirection.INPUT &&
+                it.sourceType == RuleSlotSourceType.SYSTEM_INPUT
+        }.map { slot ->
+            RuleSystemInputDefinition(
+                role = slot.key,
+                sourceType = RuleInputSourceType.SYSTEM_VARIABLE,
+                variableKey = slot.systemVariableKey,
+                required = slot.isRequired,
+            )
+        }
+
+    val outputTargets: List<RuleOutputTargetDefinition>
+        get() = slots.filter { it.direction == RuleSlotDirection.OUTPUT }.map { slot ->
+            val strategy = outputStrategies.firstOrNull { it.slotKey == slot.key }
+            RuleOutputTargetDefinition(
+                outputKey = slot.key,
+                targetType = strategy?.targetType ?: when (slot.sourceType) {
+                    RuleSlotSourceType.ATTRIBUTE_OUTPUT -> RuleOutputTargetType.ATTRIBUTE_VALUE
+                    RuleSlotSourceType.SYSTEM_OUTPUT -> RuleOutputTargetType.SYSTEM_VARIABLE
+                    else -> RuleOutputTargetType.READONLY_RESULT
+                },
+                variableKey = strategy?.systemVariableKey ?: slot.systemVariableKey,
+            )
+        }
+
+    val defaultExpression: String?
+        get() = defaultExpressionDefinition?.expression
+}

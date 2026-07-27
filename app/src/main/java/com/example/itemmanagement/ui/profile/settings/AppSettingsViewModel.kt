@@ -3,6 +3,8 @@ package com.example.itemmanagement.ui.profile.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.itemmanagement.data.model.HomeFunctionConfig
+import com.example.itemmanagement.data.model.attribute.AppSystemSourceSnapshot
+import com.example.itemmanagement.data.repository.AppSystemSourceRepository
 import com.example.itemmanagement.data.repository.UserProfileRepository
 import kotlinx.coroutines.launch
 
@@ -11,7 +13,8 @@ import kotlinx.coroutines.launch
  * 简化版：不使用LiveData/Flow，由Fragment主动调用
  */
 class AppSettingsViewModel(
-    private val userProfileRepository: UserProfileRepository
+    private val userProfileRepository: UserProfileRepository,
+    private val appSystemSourceRepository: AppSystemSourceRepository,
 ) : ViewModel() {
 
     /**
@@ -42,6 +45,18 @@ class AppSettingsViewModel(
         } catch (e: Exception) {
             HomeFunctionConfig()
         }
+    }
+
+    suspend fun getDefaultCurrency(): String {
+        return appSystemSourceRepository.getDefaultCurrency()
+    }
+
+    fun saveDefaultCurrency(currencyCode: String) {
+        appSystemSourceRepository.saveDefaultCurrency(currencyCode)
+    }
+
+    suspend fun getSystemSourceSnapshot(): AppSystemSourceSnapshot {
+        return appSystemSourceRepository.getSnapshot()
     }
     
     /**

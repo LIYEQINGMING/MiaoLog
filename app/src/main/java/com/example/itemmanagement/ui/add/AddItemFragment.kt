@@ -9,7 +9,6 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
-import android.view.MenuItem
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -28,8 +27,10 @@ import androidx.navigation.fragment.findNavController
 import com.example.itemmanagement.ItemManagementApplication
 import com.example.itemmanagement.R
 import com.example.itemmanagement.data.AppDatabase
+import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
 import com.example.itemmanagement.data.entity.template.ItemTemplateEntity
-import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
+import com.example.itemmanagement.data.model.attribute.RuleDefinition
+import com.example.itemmanagement.data.model.attribute.expandAttributeDefinitionsWithRules
 import com.example.itemmanagement.data.model.template.TemplateFieldDefaults
 import com.example.itemmanagement.data.repository.ItemTemplateRepository
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
@@ -38,10 +39,20 @@ import com.example.itemmanagement.ui.common.FieldProperties
 import com.example.itemmanagement.ui.common.ValidationType
 import com.example.itemmanagement.ui.template.TemplateSelectionBottomSheet
 import com.example.itemmanagement.ui.theme.LiquidGlassTheme
+import com.example.itemmanagement.ui.components.ITEM_BASE_REQUIRED_FIELDS
+import com.example.itemmanagement.ui.components.itemAttributeTypeKey
+import com.example.itemmanagement.ui.components.itemBuildFormField
+import com.example.itemmanagement.ui.components.itemCustomFieldName
+import com.example.itemmanagement.ui.components.itemCustomIncludeFieldName
+import com.example.itemmanagement.ui.components.itemCustomMetaTypeFieldName
+import com.example.itemmanagement.ui.components.itemCurrencyOptions
+import com.example.itemmanagement.ui.components.itemIsBaseIntrinsicField
+import com.example.itemmanagement.ui.components.itemIsPriceAttribute
 import com.example.itemmanagement.utils.combineCategoryPath
 import com.example.itemmanagement.utils.SnackbarHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -63,15 +74,11 @@ class AddItemFragment : Fragment() {
 
     private var currentTemplateId: Long = -1L
     private var currentTemplate by mutableStateOf<ItemTemplateEntity?>(null)
-    private var customAttributeDefinitions by mutableStateOf<List<CustomAttributeDefinitionEntity>>(emptyList())
+    private var customAttributeDefinitions by mutableStateOf<List<AttributeDefinitionEntity>>(emptyList())
+    private var ruleDefinitions by mutableStateOf<List<RuleDefinition>>(emptyList())
 
     private var currentPhotoUri: Uri? = null
     private var currentPhotoFile: File? = null
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setHasOptionsMenu(true)
-    }
 
     override fun onCreateView(
         inflater: android.view.LayoutInflater,
@@ -86,12 +93,13 @@ class AddItemFragment : Fragment() {
                         viewModel = viewModel,
                         selectedTemplate = currentTemplate,
                         customAttributeDefinitions = customAttributeDefinitions,
+                        ruleDefinitions = ruleDefinitions,
                         onChooseTemplate = { showTemplateSelectionDialog() },
-                        onEditFields = { showEditFieldsDialog() },
                         onPickPhoto = { checkAndRequestStoragePermission() },
                         onTakePhoto = { checkAndRequestCameraPermission() },
                         onRemovePhoto = { viewModel.removePhotoUri(it) },
                         onShowCategoryPicker = { openCategoryPicker() },
+                        onNavigateBack = { findNavController().navigateUp() },
                         onSave = { viewModel.performSave() }
                     )
                 }
@@ -101,8 +109,8 @@ class AddItemFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        configureActionBar()
         hideBottomNavigation()
+        hideActionBar()
         observeCategoryPickerResult()
         observeViewModel()
         initializeScreen()
@@ -111,41 +119,21 @@ class AddItemFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         hideBottomNavigation()
-        configureActionBar()
+        hideActionBar()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
-        configureActionBar()
         showBottomNavigation()
-        restoreActionBar()
+        showActionBar()
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            android.R.id.home -> {
-                findNavController().navigateUp()
-                true
-            }
-
-            else -> super.onOptionsItemSelected(item)
-        }
+    private fun hideActionBar() {
+        (activity as? AppCompatActivity)?.supportActionBar?.hide()
     }
 
-    private fun configureActionBar() {
-        (requireActivity() as? AppCompatActivity)?.supportActionBar?.let { actionBar ->
-            actionBar.setDisplayHomeAsUpEnabled(true)
-            actionBar.setHomeAsUpIndicator(R.drawable.ic_close)
-            actionBar.title = "新增物品"
-        }
-    }
-
-    private fun restoreActionBar() {
-        (requireActivity() as? AppCompatActivity)?.supportActionBar?.let { actionBar ->
-            actionBar.setDisplayHomeAsUpEnabled(false)
-            actionBar.setHomeAsUpIndicator(null)
-            actionBar.title = ""
-        }
+    private fun showActionBar() {
+        (activity as? AppCompatActivity)?.supportActionBar?.show()
     }
 
     private fun observeCategoryPickerResult() {
@@ -188,7 +176,7 @@ class AddItemFragment : Fragment() {
             currentTemplateId > 0 -> evaluateTemplateApplication(cache, hasCache)
             hasCache -> {
                 currentTemplate = null
-                customAttributeDefinitions = emptyList()
+                loadAllAttributeDefinitions()
                 viewModel.saveFieldValue("模板ID", null)
             }
 
@@ -310,20 +298,18 @@ class AddItemFragment : Fragment() {
     private fun applyDefaultFieldSelection() {
         currentTemplateId = -1L
         currentTemplate = null
-        customAttributeDefinitions = emptyList()
         viewModel.clearStateAndCache()
         viewModel.setSelectedFields(defaultFields().toSet())
         viewModel.saveFieldValue("模板ID", null)
         ensureDefaultDate()
+        loadAllAttributeDefinitions()
     }
 
     private fun defaultFields(): List<Field> {
         return listOf(
             Field("基础信息", "名称", true),
             Field("基础信息", "分类", true),
-            Field("基础信息", "数量", true),
-            Field("补充信息", "状态", true),
-            Field("补充信息", "标签", true)
+            Field("基础信息", "数量", true)
         )
     }
 
@@ -396,6 +382,8 @@ class AddItemFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val database = AppDatabase.getDatabase(requireContext())
+                val app = requireActivity().application as ItemManagementApplication
+                app.attributeRepository.ensureItemSystemAttributes()
                 val repository = ItemTemplateRepository(database.itemTemplateDao())
                 val template = preloadedTemplate ?: repository.getTemplateById(templateId)
 
@@ -413,20 +401,30 @@ class AddItemFragment : Fragment() {
                     repository.useTemplate(template.id)
                 }
 
-                val definitions = loadCustomAttributeDefinitions(template, database)
+                val allDefinitions = loadAllAttributeDefinitions(database)
+                val rules = app.attributeRepository.getAllRules().first()
+                val templateDefinitions = resolveTemplateAttributeDefinitions(
+                    template = template,
+                    allDefinitions = allDefinitions,
+                    ruleDefinitions = rules,
+                )
 
                 withContext(Dispatchers.Main) {
-                    currentTemplateId = template.id
-                    currentTemplate = template
-                    customAttributeDefinitions = definitions
+                      currentTemplateId = template.id
+                      currentTemplate = template
+                      customAttributeDefinitions = allDefinitions
+                      ruleDefinitions = rules
+                      viewModel.registerAttributeDefinitions(allDefinitions)
 
                     val fields = mutableSetOf<Field>()
-                    fields.add(Field("基础信息", "名称", true))
+                    ITEM_BASE_REQUIRED_FIELDS.forEach { fieldName ->
+                        fields.add(Field("基础信息", fieldName, true))
+                    }
                     template.selectedFields
                         .split(",")
                         .map { it.trim() }
                         .filter { it.isNotEmpty() }
-                        .filterNot { it == "子分类" }
+                        .filter(::itemIsBaseIntrinsicField)
                         .forEach { fieldName ->
                             fields.add(
                                 Field(
@@ -436,34 +434,34 @@ class AddItemFragment : Fragment() {
                                 )
                             )
                         }
-
-                    definitions.forEachIndexed { index, definition ->
+                    templateDefinitions.forEachIndexed { index, definition ->
                         val fieldName = customFieldName(definition)
                         viewModel.setFieldProperties(
                             fieldName,
                             FieldProperties(
-                                validationType = when (definition.type) {
-                                    CustomAttributeDefinitionEntity.TYPE_DATE -> ValidationType.DATE
-                                    CustomAttributeDefinitionEntity.TYPE_PRICE,
-                                    CustomAttributeDefinitionEntity.TYPE_NUMBER -> ValidationType.NUMBER
+                                validationType = when {
+                                    itemAttributeTypeKey(definition) == "DATE" -> ValidationType.DATE
+                                    itemAttributeTypeKey(definition) == "PRICE" ||
+                                        itemAttributeTypeKey(definition) == "NUMBER" -> ValidationType.NUMBER
                                     else -> ValidationType.TEXT
                                 },
                                 hint = "请输入${definition.name}",
-                                unit = definition.unit,
-                                unitOptions = definition.unit?.let { listOf(it) },
+                                unit = if (itemIsPriceAttribute(definition)) "CNY" else null,
+                                unitOptions = if (itemIsPriceAttribute(definition)) itemCurrencyOptions() else null,
                                 isCustomizable = false
                             )
                         )
-                        viewModel.saveFieldValue("custom_meta_${definition.id}_type", definition.type)
-                        if (viewModel.getFieldValue("custom_include_${definition.id}") == null) {
-                            viewModel.saveFieldValue("custom_include_${definition.id}", true)
+                        viewModel.saveFieldValue(itemCustomMetaTypeFieldName(definition.id), itemAttributeTypeKey(definition))
+                        if (viewModel.getFieldValue(itemCustomIncludeFieldName(definition.id)) == null) {
+                            viewModel.saveFieldValue(itemCustomIncludeFieldName(definition.id), true)
                         }
                         fields.add(
-                            Field(
+                            itemBuildFormField(
                                 group = "补充信息",
-                                name = fieldName,
+                                fieldName = fieldName,
                                 isSelected = true,
-                                order = 1000 + index
+                                order = 1000 + index,
+                                attributeDefinitions = allDefinitions,
                             )
                         )
                     }
@@ -490,21 +488,78 @@ class AddItemFragment : Fragment() {
         }
     }
 
-    private suspend fun loadCustomAttributeDefinitions(
-        template: ItemTemplateEntity,
+    private fun loadAllAttributeDefinitions() {
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val database = AppDatabase.getDatabase(requireContext())
+            val app = requireActivity().application as ItemManagementApplication
+            app.attributeRepository.ensureSystemRules()
+            val definitions = loadAllAttributeDefinitions(database)
+              val rules = app.attributeRepository.getAllRules().first()
+              withContext(Dispatchers.Main) {
+                  customAttributeDefinitions = definitions
+                  ruleDefinitions = rules
+                  viewModel.registerAttributeDefinitions(definitions)
+              }
+          }
+      }
+
+    private suspend fun loadAllAttributeDefinitions(
         database: AppDatabase
-    ): List<CustomAttributeDefinitionEntity> {
+    ): List<AttributeDefinitionEntity> {
+        val app = requireActivity().application as ItemManagementApplication
+        app.attributeRepository.ensureItemSystemAttributes()
+        return database.attributeDefinitionDao().getAllDefinitions().first()
+    }
+
+    private fun resolveTemplateAttributeDefinitions(
+        template: ItemTemplateEntity,
+        allDefinitions: List<AttributeDefinitionEntity>,
+        ruleDefinitions: List<RuleDefinition>,
+    ): List<AttributeDefinitionEntity> {
+        val byId = allDefinitions.associateBy { it.id }
+        val legacyFieldNames = template.selectedFields
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !itemIsBaseIntrinsicField(it) }
+            .toSet()
+
+        val legacyDefinitions = allDefinitions.filter { definition ->
+            itemCustomFieldName(definition) in legacyFieldNames
+        }
+
+        val explicitDefinitions = (parseTemplateAttributeIds(template).mapNotNull(byId::get) + legacyDefinitions)
+            .distinctBy { it.id }
+        return expandAttributeDefinitionsWithRules(
+            selectedDefinitions = explicitDefinitions,
+            allDefinitions = allDefinitions,
+            fieldNameProvider = ::itemCustomFieldName,
+            ruleDefinitions = ruleDefinitions,
+        )
+    }
+
+    private fun parseTemplateAttributeIds(template: ItemTemplateEntity): List<String> {
         if (template.customAttributeIds.isNullOrBlank()) {
             return emptyList()
         }
 
         return try {
-            val type = object : com.google.gson.reflect.TypeToken<List<Long>>() {}.type
-            val ids: List<Long> = com.google.gson.Gson().fromJson(template.customAttributeIds, type)
-                ?: emptyList()
-            ids.mapNotNull { database.customAttributeDefinitionDao().getDefinitionById(it) }
+            val gson = com.google.gson.Gson()
+            val stringType = object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
+            val legacyType = object : com.google.gson.reflect.TypeToken<List<Long>>() {}.type
+            val stringIds = runCatching {
+                gson.fromJson<List<String>>(template.customAttributeIds, stringType).orEmpty()
+            }.getOrDefault(emptyList())
+            if (stringIds.isNotEmpty()) {
+                stringIds
+            } else {
+                runCatching {
+                    gson.fromJson<List<Long>>(template.customAttributeIds, legacyType)
+                        .orEmpty()
+                        .map { it.toString() }
+                }.getOrDefault(emptyList())
+            }
         } catch (e: Exception) {
-            android.util.Log.e("AddItemFragment", "解析模板高级属性失败", e)
+            android.util.Log.e("AddItemFragment", "解析模板属性ID失败", e)
             emptyList()
         }
     }
@@ -512,14 +567,15 @@ class AddItemFragment : Fragment() {
     private fun loadTemplateMetadata(template: ItemTemplateEntity) {
         currentTemplateId = template.id
         currentTemplate = template
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            val definitions = loadCustomAttributeDefinitions(template, AppDatabase.getDatabase(requireContext()))
-            withContext(Dispatchers.Main) {
-                customAttributeDefinitions = definitions
-                definitions.forEach { definition ->
-                    viewModel.saveFieldValue("custom_meta_${definition.id}_type", definition.type)
-                }
-            }
+          viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+              val definitions = loadAllAttributeDefinitions(AppDatabase.getDatabase(requireContext()))
+              withContext(Dispatchers.Main) {
+                  customAttributeDefinitions = definitions
+                  viewModel.registerAttributeDefinitions(definitions)
+                  definitions.forEach { definition ->
+                      viewModel.saveFieldValue(itemCustomMetaTypeFieldName(definition.id), itemAttributeTypeKey(definition))
+                  }
+              }
         }
     }
 
@@ -570,8 +626,8 @@ class AddItemFragment : Fragment() {
         }
     }
 
-    private fun customFieldName(definition: CustomAttributeDefinitionEntity): String {
-        return "custom_${definition.id}_${definition.name}"
+    private fun customFieldName(definition: AttributeDefinitionEntity): String {
+        return itemCustomFieldName(definition)
     }
 
     private fun buildTemplateSignature(template: ItemTemplateEntity): String {

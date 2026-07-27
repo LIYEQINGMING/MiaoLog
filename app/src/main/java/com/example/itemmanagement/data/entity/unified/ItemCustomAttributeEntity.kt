@@ -17,12 +17,6 @@ import androidx.room.PrimaryKey
             parentColumns = ["id"],
             childColumns = ["itemId"],
             onDelete = ForeignKey.CASCADE
-        ),
-        ForeignKey(
-            entity = CustomAttributeDefinitionEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["definitionId"],
-            onDelete = ForeignKey.CASCADE
         )
     ],
     indices = [
@@ -38,8 +32,8 @@ data class ItemCustomAttributeEntity(
     /** 关联的物品ID */
     val itemId: Long,
     
-    /** 关联的属性定义ID */
-    val definitionId: Long,
+    /** 关联的新属性定义ID */
+    val definitionId: String,
     
     /** 文本值（用于 TEXT 类型） */
     val valueText: String? = null,

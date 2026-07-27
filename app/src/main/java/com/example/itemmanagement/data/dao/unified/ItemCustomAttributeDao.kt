@@ -22,7 +22,7 @@ interface ItemCustomAttributeDao {
     fun getAttributesByItemId(itemId: Long): Flow<List<ItemCustomAttributeEntity>>
     
     @Query("SELECT * FROM item_custom_attributes WHERE definitionId = :definitionId")
-    suspend fun getAttributesByDefinitionId(definitionId: Long): List<ItemCustomAttributeEntity>
+    suspend fun getAttributesByDefinitionId(definitionId: String): List<ItemCustomAttributeEntity>
     
     @Query("SELECT * FROM item_custom_attributes")
     fun getAllFlow(): Flow<List<ItemCustomAttributeEntity>>
@@ -31,5 +31,5 @@ interface ItemCustomAttributeDao {
     suspend fun deleteByItemId(itemId: Long)
     
     @Query("DELETE FROM item_custom_attributes WHERE itemId = :itemId AND definitionId = :definitionId")
-    suspend fun deleteByItemIdAndDefinitionId(itemId: Long, definitionId: Long)
+    suspend fun deleteByItemIdAndDefinitionId(itemId: Long, definitionId: String)
 }

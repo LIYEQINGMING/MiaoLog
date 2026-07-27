@@ -2,6 +2,8 @@ package com.example.itemmanagement.ui.base
 
 import android.net.Uri
 import androidx.lifecycle.*
+import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
+import com.example.itemmanagement.data.model.attribute.SystemVariableKey
 import com.example.itemmanagement.data.repository.UnifiedItemRepository
 import com.example.itemmanagement.ui.add.Field
 import com.example.itemmanagement.ui.base.FieldInteractionViewModel
@@ -55,6 +57,9 @@ abstract class BaseItemViewModel(
     protected val _fieldVersion = MutableLiveData(0)
     val fieldVersion: LiveData<Int> = _fieldVersion
 
+    protected val _itemRuleBindings = MutableLiveData<List<RuleBindingInstance>>(emptyList())
+    val itemRuleBindings: LiveData<List<RuleBindingInstance>> = _itemRuleBindings
+
     // 操作状态
     protected val _saveResult = MutableLiveData<Boolean>()
     val saveResult: LiveData<Boolean> = _saveResult
@@ -64,6 +69,7 @@ abstract class BaseItemViewModel(
 
     // 字段值存储
     protected var fieldValues: MutableMap<String, Any?> = mutableMapOf()
+    private val runtimeSystemValues: MutableMap<SystemVariableKey, Any?> = mutableMapOf()
     
     // 自定义选项存储
     protected var customOptionsMap: MutableMap<String, MutableList<String>> = mutableMapOf()
@@ -140,9 +146,11 @@ abstract class BaseItemViewModel(
     open fun clearStateAndCache() {
         // 清除当前状态
         fieldValues.clear()
+        runtimeSystemValues.clear()
         _selectedFields.value = setOf()
         _photoUris.value = emptyList()
         _selectedTags.value = mapOf()
+        _itemRuleBindings.value = emptyList()
         customOptionsMap.clear()
         customUnitsMap.clear()
         customTagsMap.clear()
@@ -230,6 +238,75 @@ abstract class BaseItemViewModel(
         }
 
         return fieldValues[fieldName]
+    }
+
+    fun getRuntimeSystemValue(key: SystemVariableKey): Any? {
+        return runtimeSystemValues[key]
+    }
+
+    fun getAllRuntimeSystemValues(): Map<SystemVariableKey, Any?> {
+        return runtimeSystemValues.toMap()
+    }
+
+    open fun setItemRuleBindings(bindings: List<RuleBindingInstance>) {
+        _itemRuleBindings.value = bindings
+        _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
+        saveToCache()
+    }
+
+    open fun addOrUpdateItemRuleBinding(binding: RuleBindingInstance) {
+        val updated = (_itemRuleBindings.value ?: emptyList())
+            .filterNot { it.id == binding.id } + binding
+        _itemRuleBindings.value = updated
+        _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
+        saveToCache()
+    }
+
+    open fun removeItemRuleBinding(bindingId: String) {
+        val updated = (_itemRuleBindings.value ?: emptyList()).filterNot { it.id == bindingId }
+        if (updated.size == (_itemRuleBindings.value ?: emptyList()).size) {
+            return
+        }
+        _itemRuleBindings.value = updated
+        _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
+        saveToCache()
+    }
+
+    open fun applyRuleRuntimeState(
+        fieldUpdates: Map<String, Any?> = emptyMap(),
+        systemUpdates: Map<SystemVariableKey, Any?> = emptyMap(),
+    ): Boolean {
+        var changed = false
+
+        fieldUpdates.forEach { (fieldName, newValue) ->
+            val currentValue = fieldValues[fieldName]
+            if (currentValue != newValue) {
+                if (newValue == null) {
+                    fieldValues.remove(fieldName)
+                } else {
+                    fieldValues[fieldName] = newValue
+                }
+                changed = true
+            }
+        }
+
+        systemUpdates.forEach { (key, newValue) ->
+            val currentValue = runtimeSystemValues[key]
+            if (currentValue != newValue) {
+                if (newValue == null) {
+                    runtimeSystemValues.remove(key)
+                } else {
+                    runtimeSystemValues[key] = newValue
+                }
+                changed = true
+            }
+        }
+
+        if (changed) {
+            _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
+            saveToCache()
+        }
+        return changed
     }
 
     /**

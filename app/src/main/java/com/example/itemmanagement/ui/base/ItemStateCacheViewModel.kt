@@ -2,6 +2,7 @@ package com.example.itemmanagement.ui.base
 
 import android.net.Uri
 import androidx.lifecycle.ViewModel
+import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
 import com.example.itemmanagement.ui.add.Field
 
 /**
@@ -26,6 +27,7 @@ class ItemStateCacheViewModel : ViewModel() {
         var selectedFields: Set<Field> = setOf(),
         var photoUris: List<Uri> = emptyList(),
         var selectedTags: Map<String, Set<String>> = mapOf(),
+        var ruleBindings: List<RuleBindingInstance> = emptyList(),
         var customOptions: MutableMap<String, MutableList<String>> = mutableMapOf(),
         var customUnits: MutableMap<String, MutableList<String>> = mutableMapOf(),
         var customTags: MutableMap<String, MutableList<String>> = mutableMapOf(),
@@ -41,6 +43,7 @@ class ItemStateCacheViewModel : ViewModel() {
         var selectedFields: Set<Field> = setOf(),
         var photoUris: List<Uri> = emptyList(),
         var selectedTags: Map<String, Set<String>> = mapOf(),
+        var ruleBindings: List<RuleBindingInstance> = emptyList(),
         var customOptions: MutableMap<String, MutableList<String>> = mutableMapOf(),
         var customUnits: MutableMap<String, MutableList<String>> = mutableMapOf(),
         var customTags: MutableMap<String, MutableList<String>> = mutableMapOf(),
@@ -138,6 +141,7 @@ class ItemStateCacheViewModel : ViewModel() {
         _addItemCache.selectedFields = setOf()
         _addItemCache.photoUris = emptyList()
         _addItemCache.selectedTags = mapOf()
+        _addItemCache.ruleBindings = emptyList()
         _addItemCache.customOptions.clear()
         _addItemCache.customUnits.clear()
         _addItemCache.customTags.clear()

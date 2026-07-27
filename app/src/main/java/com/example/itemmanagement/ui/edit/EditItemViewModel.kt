@@ -3,13 +3,16 @@ package com.example.itemmanagement.ui.edit
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
 import com.example.itemmanagement.data.repository.UnifiedItemRepository
 import com.example.itemmanagement.data.repository.WarrantyRepository
 import com.example.itemmanagement.data.entity.WarrantyEntity
 import com.example.itemmanagement.data.entity.WarrantyStatus
-import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
 import com.example.itemmanagement.data.relation.ItemWithDetails
 import com.example.itemmanagement.data.model.Item
+import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
+import com.example.itemmanagement.data.model.attribute.RuleDefinition
+import com.example.itemmanagement.data.model.attribute.expandAttributeFieldSelectionWithRules
 import com.example.itemmanagement.data.mapper.toItemEntity
 import com.example.itemmanagement.data.mapper.toLocationEntity
 import com.example.itemmanagement.data.mapper.toItem
@@ -17,6 +20,17 @@ import com.example.itemmanagement.data.mapper.toItem
 import com.example.itemmanagement.ui.add.Field
 import com.example.itemmanagement.ui.base.BaseItemViewModel
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
+import com.example.itemmanagement.ui.components.itemAttributeTypeKey
+import com.example.itemmanagement.ui.components.itemBuildCustomAttributeEntities
+import com.example.itemmanagement.ui.components.itemBuildFormField
+import com.example.itemmanagement.ui.components.itemCurrencyOptions
+import com.example.itemmanagement.ui.components.itemCustomFieldName
+import com.example.itemmanagement.ui.components.itemCustomIncludeFieldName
+import com.example.itemmanagement.ui.components.itemCustomMetaTypeFieldName
+import com.example.itemmanagement.ui.components.itemDecodeCustomAttributeFieldState
+import com.example.itemmanagement.ui.components.itemEnrichFieldReference
+import com.example.itemmanagement.ui.components.itemIsPriceAttribute
+import com.example.itemmanagement.ui.components.itemSelectedCustomAttributeIds
 import com.example.itemmanagement.utils.combineCategoryPath
 import com.example.itemmanagement.utils.normalizeCategoryPath
 import kotlinx.coroutines.launch
@@ -48,6 +62,7 @@ class EditItemViewModel(
         val selectedFields: Set<Field>,
         val photoUris: List<Uri>,
         val selectedTags: Map<String, Set<String>>,
+        val ruleBindings: List<RuleBindingInstance>,
         val customOptions: Map<String, List<String>>,
         val customUnits: Map<String, List<String>>,
         val customTags: Map<String, List<String>>
@@ -57,6 +72,8 @@ class EditItemViewModel(
     private var originalSnapshot: FormStateSnapshot? = null
     private var isRestoringState = false
     private var customDefinitionsBound = false
+    private var pendingCacheRestore = false
+    private var customAttributeDefinitionsById: Map<String, AttributeDefinitionEntity> = emptyMap()
     
     private val _canUndo = MutableLiveData(false)
     val canUndo: LiveData<Boolean> = _canUndo
@@ -133,6 +150,41 @@ class EditItemViewModel(
         updateSessionState()
     }
 
+    override fun setItemRuleBindings(bindings: List<RuleBindingInstance>) {
+        if ((_itemRuleBindings.value ?: emptyList()) == bindings) return
+        recordUndoStateIfNeeded(true)
+        super.setItemRuleBindings(bindings)
+        updateSessionState()
+    }
+
+    override fun addOrUpdateItemRuleBinding(binding: RuleBindingInstance) {
+        val currentBindings = _itemRuleBindings.value ?: emptyList()
+        val updatedBindings = currentBindings.filterNot { it.id == binding.id } + binding
+        if (currentBindings == updatedBindings) return
+        recordUndoStateIfNeeded(true)
+        super.addOrUpdateItemRuleBinding(binding)
+        updateSessionState()
+    }
+
+    override fun removeItemRuleBinding(bindingId: String) {
+        val currentBindings = _itemRuleBindings.value ?: emptyList()
+        if (currentBindings.none { it.id == bindingId }) return
+        recordUndoStateIfNeeded(true)
+        super.removeItemRuleBinding(bindingId)
+        updateSessionState()
+    }
+
+    override fun applyRuleRuntimeState(
+        fieldUpdates: Map<String, Any?>,
+        systemUpdates: Map<com.example.itemmanagement.data.model.attribute.SystemVariableKey, Any?>,
+    ): Boolean {
+        val changed = super.applyRuleRuntimeState(fieldUpdates, systemUpdates)
+        if (changed) {
+            updateSessionState()
+        }
+        return changed
+    }
+
     fun undoLastChange() {
         if (undoHistory.isEmpty()) {
             return
@@ -160,76 +212,95 @@ class EditItemViewModel(
         _deleteResult.value = null
     }
 
-    fun bindCustomAttributeDefinitions(definitions: List<CustomAttributeDefinitionEntity>) {
+    fun bindAttributeDefinitions(
+        definitions: List<AttributeDefinitionEntity>,
+        ruleDefinitions: List<RuleDefinition> = emptyList(),
+    ) {
         if (customDefinitionsBound) {
             return
         }
 
         customDefinitionsBound = true
+        customAttributeDefinitionsById = definitions.associateBy { it.id }
         viewModelScope.launch {
             try {
                 val existingAttributes = repository.getCustomAttributesByItemId(itemId)
                 val attributeMap = existingAttributes.associateBy { it.definitionId }
-                val selectedFields = (_selectedFields.value ?: emptySet()).toMutableSet()
+                val selectedFields = (_selectedFields.value ?: emptySet())
+                    .map { field -> itemEnrichFieldReference(field, definitions) }
+                    .toMutableSet()
 
                 isRestoringState = true
                 definitions.forEachIndexed { index, definition ->
-                    val fieldName = customFieldName(definition)
+                    val fieldName = itemCustomFieldName(definition)
                     setFieldProperties(
                         fieldName,
                         com.example.itemmanagement.ui.common.FieldProperties(
-                            validationType = when (definition.type) {
-                                CustomAttributeDefinitionEntity.TYPE_DATE -> com.example.itemmanagement.ui.common.ValidationType.DATE
-                                CustomAttributeDefinitionEntity.TYPE_PRICE,
-                                CustomAttributeDefinitionEntity.TYPE_NUMBER -> com.example.itemmanagement.ui.common.ValidationType.NUMBER
+                            validationType = when (itemAttributeTypeKey(definition)) {
+                                "DATE" -> com.example.itemmanagement.ui.common.ValidationType.DATE
+                                "PRICE", "NUMBER" -> com.example.itemmanagement.ui.common.ValidationType.NUMBER
                                 else -> com.example.itemmanagement.ui.common.ValidationType.TEXT
                             },
                             hint = "请输入${definition.name}",
-                            unit = definition.unit,
-                            unitOptions = definition.unit?.let { listOf(it) },
+                            unit = if (itemIsPriceAttribute(definition)) "CNY" else null,
+                            unitOptions = if (itemIsPriceAttribute(definition)) itemCurrencyOptions() else null,
                             isCustomizable = false
                         )
                     )
-                    fieldValues["custom_meta_${definition.id}_type"] = definition.type
+                    fieldValues[itemCustomMetaTypeFieldName(definition.id)] = itemAttributeTypeKey(definition)
 
                     val existing = attributeMap[definition.id]
                     if (existing != null) {
-                        fieldValues[fieldName] = when (definition.type) {
-                            CustomAttributeDefinitionEntity.TYPE_DATE -> {
-                                existing.valueDate?.let { millis ->
-                                    SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis))
-                                }
-                            }
-                            CustomAttributeDefinitionEntity.TYPE_BOOLEAN -> existing.valueNumber?.let { it != 0.0 }
-                            CustomAttributeDefinitionEntity.TYPE_NUMBER,
-                            CustomAttributeDefinitionEntity.TYPE_PRICE -> existing.valueNumber?.let { numeric ->
-                                if (numeric == numeric.toInt().toDouble()) {
-                                    numeric.toInt().toString()
-                                } else {
-                                    numeric.toString()
-                                }
-                            }
-                            else -> existing.valueText
+                        val decodedState = itemDecodeCustomAttributeFieldState(definition, existing)
+                        fieldValues[fieldName] = decodedState.fieldValue
+                        decodedState.unitValue?.let { unitValue ->
+                            fieldValues["${fieldName}_unit"] = unitValue
                         }
-                        fieldValues["custom_include_${definition.id}"] = existing.includeInTotal
+                        fieldValues[itemCustomIncludeFieldName(definition.id)] = decodedState.includeInTotal
                         selectedFields.removeAll { it.name == fieldName }
                         selectedFields.add(
-                            Field(
+                            itemBuildFormField(
                                 group = "补充信息",
-                                name = fieldName,
+                                fieldName = fieldName,
                                 isSelected = true,
-                                order = 1000 + index
+                                order = 1000 + index,
+                                attributeDefinitions = definitions,
                             )
                         )
-                    } else if (!fieldValues.containsKey("custom_include_${definition.id}")) {
-                        fieldValues["custom_include_${definition.id}"] = true
+                    } else if (!fieldValues.containsKey(itemCustomIncludeFieldName(definition.id))) {
+                        fieldValues[itemCustomIncludeFieldName(definition.id)] = true
+                    }
+                }
+                val expansion = expandAttributeFieldSelectionWithRules(
+                    selectedFieldNames = selectedFields.map { it.name },
+                    selectedAttributeIds = itemSelectedCustomAttributeIds(selectedFields, definitions),
+                    allAttributes = definitions,
+                    fieldNameProvider = ::itemCustomFieldName,
+                    ruleDefinitions = ruleDefinitions,
+                )
+                expansion.autoAddedFieldNames.forEachIndexed { index, fieldName ->
+                    if (selectedFields.none { it.name == fieldName }) {
+                        selectedFields.add(
+                            itemBuildFormField(
+                                group = "补充信息",
+                                fieldName = fieldName,
+                                isSelected = true,
+                                order = 2000 + index,
+                                attributeDefinitions = definitions,
+                            )
+                        )
                     }
                 }
                 _selectedFields.value = selectedFields
                 _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
                 isRestoringState = false
 
-                originalSnapshot = captureSnapshot()
+                val pristineSnapshot = captureSnapshot()
+                if (pendingCacheRestore) {
+                    loadFromCache()
+                    pendingCacheRestore = false
+                }
+                originalSnapshot = pristineSnapshot
                 resetUndoHistory()
                 updateSessionState()
                 saveToCache()
@@ -265,6 +336,7 @@ class EditItemViewModel(
             selectedFields = (_selectedFields.value ?: emptySet()).toSet(),
             photoUris = (_photoUris.value ?: emptyList()).toList(),
             selectedTags = (_selectedTags.value ?: emptyMap()).mapValues { it.value.toSet() },
+            ruleBindings = (_itemRuleBindings.value ?: emptyList()).toList(),
             customOptions = customOptionsMap.mapValues { it.value.toList() },
             customUnits = customUnitsMap.mapValues { it.value.toList() },
             customTags = customTagsMap.mapValues { it.value.toList() }
@@ -277,6 +349,7 @@ class EditItemViewModel(
         _selectedFields.value = snapshot.selectedFields
         _photoUris.value = snapshot.photoUris
         _selectedTags.value = snapshot.selectedTags
+        _itemRuleBindings.value = snapshot.ruleBindings
         customOptionsMap = snapshot.customOptions.mapValues { it.value.toMutableList() }.toMutableMap()
         customUnitsMap = snapshot.customUnits.mapValues { it.value.toMutableList() }.toMutableMap()
         customTagsMap = snapshot.customTags.mapValues { it.value.toMutableList() }.toMutableMap()
@@ -312,6 +385,7 @@ class EditItemViewModel(
         _selectedFields.value = cache.selectedFields
         _photoUris.value = cache.photoUris
         _selectedTags.value = cache.selectedTags
+        _itemRuleBindings.value = cache.ruleBindings
         customOptionsMap = cache.customOptions.toMutableMap()
         customUnitsMap = cache.customUnits.toMutableMap()
         customTagsMap = cache.customTags.toMutableMap()
@@ -324,6 +398,7 @@ class EditItemViewModel(
         cache.selectedFields = _selectedFields.value ?: setOf()
         cache.photoUris = _photoUris.value ?: emptyList()
         cache.selectedTags = _selectedTags.value ?: mapOf()
+        cache.ruleBindings = _itemRuleBindings.value ?: emptyList()
         cache.customOptions = customOptionsMap.toMutableMap()
         cache.customUnits = customUnitsMap.toMutableMap()
         cache.customTags = customTagsMap.toMutableMap()
@@ -381,6 +456,7 @@ class EditItemViewModel(
 
             val customAttributes = buildCustomAttributeEntities(itemId)
             repository.replaceCustomAttributes(itemId, customAttributes)
+            repository.replaceItemRuleBindings(itemId, _itemRuleBindings.value ?: emptyList())
             
             // ✏️ 添加日历事件：记录编辑物品操作
             addCalendarEventForItemEdited(itemId, unifiedItem.name, unifiedItem.category)
@@ -436,18 +512,25 @@ class EditItemViewModel(
                     // 加载物品数据和保修信息到字段
                     loadItemData(item, warranty)
                     applyEntityBackedFields(itemWithDetails.unifiedItem, itemWithDetails.inventoryDetail)
+                    _itemRuleBindings.value = repository.getItemRuleBindingsByItemId(itemId)
 
-                    val pristineSnapshot = captureSnapshot()
-                    if (cacheViewModel.hasEditItemCache(itemId)) {
-                        Log.d("EditItemViewModel", "发现编辑缓存，覆盖到当前编辑表单")
-                        loadFromCache()
+                    pendingCacheRestore = cacheViewModel.hasEditItemCache(itemId)
+                    if (!customDefinitionsBound) {
+                        _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
+                        saveToCache()
+                    } else {
+                        val pristineSnapshot = captureSnapshot()
+                        if (pendingCacheRestore) {
+                            Log.d("EditItemViewModel", "发现编辑缓存，覆盖到当前编辑表单")
+                            loadFromCache()
+                            pendingCacheRestore = false
+                        }
+                        originalSnapshot = pristineSnapshot
+                        resetUndoHistory()
+                        _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
+                        updateSessionState()
+                        saveToCache()
                     }
-
-                    originalSnapshot = pristineSnapshot
-                    resetUndoHistory()
-                    _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
-                    updateSessionState()
-                    saveToCache()
                 } else {
                     Log.e("EditItemViewModel", "找不到物品 ID: $itemId")
                     _errorMessage.value = "找不到要编辑的物品"
@@ -493,6 +576,7 @@ class EditItemViewModel(
     override fun clearStateAndCache() {
         super.clearStateAndCache()
         resetUndoHistory()
+        pendingCacheRestore = false
         _hasUnsavedChanges.value = false
         // 清除缓存
         cacheViewModel.clearEditItemCache(itemId)
@@ -855,94 +939,15 @@ class EditItemViewModel(
         }
     }
 
-    private fun buildCustomAttributeEntities(
-        itemId: Long
-    ): List<com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity> {
-        return fieldValues.mapNotNull { (key, value) ->
-            if (!key.startsWith("custom_") || key.startsWith("custom_meta_") || key.startsWith("custom_include_")) {
-                return@mapNotNull null
-            }
-
-            val parts = key.split("_", limit = 3)
-            if (parts.size < 3) {
-                return@mapNotNull null
-            }
-
-            val defId = parts[1].toLongOrNull() ?: return@mapNotNull null
-            val rawType = fieldValues["custom_meta_${defId}_type"] as? String
-            val includeInTotal = getBooleanFieldValue("custom_include_$defId", defaultValue = true)
-
-            when (rawType) {
-                CustomAttributeDefinitionEntity.TYPE_DATE -> {
-                    val dateString = (value as? String)?.trim().orEmpty()
-                    if (dateString.isBlank()) {
-                        null
-                    } else {
-                        com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity(
-                            itemId = itemId,
-                            definitionId = defId,
-                            valueText = null,
-                            valueNumber = null,
-                            valueDate = parseDate(dateString)?.time,
-                            includeInTotal = includeInTotal
-                        )
-                    }
-                }
-
-                CustomAttributeDefinitionEntity.TYPE_BOOLEAN -> {
-                    com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity(
-                        itemId = itemId,
-                        definitionId = defId,
-                        valueText = null,
-                        valueNumber = if (getBooleanValue(value)) 1.0 else 0.0,
-                        valueDate = null,
-                        includeInTotal = includeInTotal
-                    )
-                }
-
-                CustomAttributeDefinitionEntity.TYPE_NUMBER,
-                CustomAttributeDefinitionEntity.TYPE_PRICE -> {
-                    val numericValue = when (value) {
-                        is Number -> value.toDouble()
-                        is String -> value.toDoubleOrNull()
-                        else -> null
-                    }
-                    if (numericValue == null) {
-                        null
-                    } else {
-                        com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity(
-                            itemId = itemId,
-                            definitionId = defId,
-                            valueText = null,
-                            valueNumber = numericValue,
-                            valueDate = null,
-                            includeInTotal = includeInTotal
-                        )
-                    }
-                }
-
-                else -> {
-                    val textValue = when (value) {
-                        null -> null
-                        is String -> value.trim().takeIf { it.isNotBlank() }
-                        else -> value.toString().takeIf { it.isNotBlank() }
-                    }
-                    if (textValue == null) {
-                        null
-                    } else {
-                        com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity(
-                            itemId = itemId,
-                            definitionId = defId,
-                            valueText = textValue,
-                            valueNumber = null,
-                            valueDate = null,
-                            includeInTotal = includeInTotal
-                        )
-                    }
-                }
-            }
-        }
-    }
+    private fun buildCustomAttributeEntities(itemId: Long) =
+        itemBuildCustomAttributeEntities(
+            itemId = itemId,
+            fieldValues = fieldValues,
+            definitionsById = customAttributeDefinitionsById,
+            fallbackCurrencyCode = getFieldValue("币种")?.toString()?.takeIf { it.isNotBlank() }
+                ?: getFieldValue("单价_unit")?.toString()?.takeIf { it.isNotBlank() }
+                ?: "CNY",
+        )
 
     private fun getBooleanFieldValue(fieldName: String, defaultValue: Boolean = false): Boolean {
         return when (val value = fieldValues[fieldName]) {
@@ -1444,9 +1449,5 @@ class EditItemViewModel(
         } catch (e: Exception) {
             android.util.Log.e("EditItemViewModel", "添加日历事件失败", e)
         }
-    }
-
-    private fun customFieldName(definition: CustomAttributeDefinitionEntity): String {
-        return "custom_${definition.id}_${definition.name}"
     }
 }

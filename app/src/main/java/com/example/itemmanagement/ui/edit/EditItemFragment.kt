@@ -27,13 +27,15 @@ import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.example.itemmanagement.ItemManagementApplication
 import com.example.itemmanagement.R
-import com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity
+import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
+import com.example.itemmanagement.data.model.attribute.RuleDefinition
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
 import com.example.itemmanagement.ui.categorypicker.CategoryPickerFragment
 import com.example.itemmanagement.ui.theme.LiquidGlassTheme
 import com.example.itemmanagement.utils.SnackbarHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -55,7 +57,8 @@ class EditItemFragment : Fragment() {
         EditItemViewModelFactory(app.repository, cacheViewModel, args.itemId, app.warrantyRepository)
     }
 
-    private var customAttributeDefinitions by mutableStateOf<List<CustomAttributeDefinitionEntity>>(emptyList())
+    private var customAttributeDefinitions by mutableStateOf<List<AttributeDefinitionEntity>>(emptyList())
+    private var ruleDefinitions by mutableStateOf<List<RuleDefinition>>(emptyList())
     private var currentPhotoUri: Uri? = null
     private var currentPhotoFile: File? = null
 
@@ -71,6 +74,7 @@ class EditItemFragment : Fragment() {
                     EditItemScreen(
                         viewModel = viewModel,
                         customAttributeDefinitions = customAttributeDefinitions,
+                        ruleDefinitions = ruleDefinitions,
                         onPickPhoto = { checkAndRequestStoragePermission() },
                         onTakePhoto = { checkAndRequestCameraPermission() },
                         onRemovePhoto = { viewModel.removePhotoUri(it) },
@@ -90,7 +94,7 @@ class EditItemFragment : Fragment() {
         hideActionBar()
         observeCategoryPickerResult()
         observeViewModel()
-        loadCustomAttributeDefinitions()
+        loadAttributeDefinitions()
     }
 
     override fun onResume() {
@@ -156,17 +160,21 @@ class EditItemFragment : Fragment() {
         )
     }
 
-    private fun loadCustomAttributeDefinitions() {
+    private fun loadAttributeDefinitions() {
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val app = requireActivity().application as ItemManagementApplication
-                val definitions = app.repository.getAllCustomAttributeDefinitions()
+                app.attributeRepository.ensureItemSystemAttributes()
+                app.attributeRepository.ensureSystemRules()
+                val definitions = app.repository.getAllAttributeDefinitions()
+                val rules = app.attributeRepository.getAllRules().first()
                 withContext(Dispatchers.Main) {
                     customAttributeDefinitions = definitions
-                    viewModel.bindCustomAttributeDefinitions(definitions)
+                    ruleDefinitions = rules
+                    viewModel.bindAttributeDefinitions(definitions, rules)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("EditItemFragment", "加载高级自定义属性失败", e)
+                android.util.Log.e("EditItemFragment", "加载属性定义失败", e)
             }
         }
     }

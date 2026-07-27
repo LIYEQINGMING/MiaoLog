@@ -182,8 +182,9 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_function -> {
                     hideTopBar()
                 }
-                R.id.addItemFragment -> {
-                    showTopBar()
+                R.id.addItemFragment,
+                R.id.editItemFragment -> {
+                    hideTopBar()
                 }
                 else -> {
                     showTopBar(forceRefresh = isRecreated)
@@ -319,9 +320,10 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_function -> {
                     hideTopBar()
                 }
-                // 添加物品页面 - 显示TopBar
-                R.id.addItemFragment -> {
-                    showTopBar()
+                // 物品表单页面 - 使用 Fragment 自己的沉浸式顶部栏
+                R.id.addItemFragment,
+                R.id.editItemFragment -> {
+                    hideTopBar()
                 }
                 // 地图查看页面 - 显示TopBar，Fragment自己会隐藏底部导航
                 R.id.navigation_map_viewer -> {
@@ -569,7 +571,9 @@ class MainActivity : AppCompatActivity() {
         }
         return when (navController.currentDestination?.id) {
             R.id.nav_category,
-            R.id.categoryPickerFragment -> true
+            R.id.categoryPickerFragment,
+            R.id.addItemFragment,
+            R.id.editItemFragment -> true
             else -> false
         }
     }

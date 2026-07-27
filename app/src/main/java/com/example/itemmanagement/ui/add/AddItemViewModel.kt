@@ -1,6 +1,7 @@
 package com.example.itemmanagement.ui.add
 
 import androidx.lifecycle.viewModelScope
+import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
 import com.example.itemmanagement.data.repository.UnifiedItemRepository
 import com.example.itemmanagement.data.repository.WarrantyRepository
 import com.example.itemmanagement.data.entity.LocationEntity
@@ -8,6 +9,7 @@ import com.example.itemmanagement.data.entity.PhotoEntity
 import com.example.itemmanagement.data.entity.TagEntity
 import com.example.itemmanagement.data.entity.WarrantyEntity
 import com.example.itemmanagement.data.entity.WarrantyStatus
+import com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity
 import com.example.itemmanagement.data.entity.unified.UnifiedItemEntity
 import com.example.itemmanagement.data.entity.unified.InventoryDetailEntity
 import com.example.itemmanagement.data.entity.unified.ItemStateType
@@ -23,6 +25,8 @@ import com.example.itemmanagement.ui.common.ValidationType
 import com.example.itemmanagement.ui.common.DisplayStyle
 import com.example.itemmanagement.ui.base.BaseItemViewModel
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
+import com.example.itemmanagement.ui.components.itemBuildCustomAttributeEntities
+import com.example.itemmanagement.ui.components.itemEnrichFieldReference
 import com.example.itemmanagement.utils.combineCategoryPath
 import com.example.itemmanagement.utils.normalizeCategoryPath
 import kotlinx.coroutines.launch
@@ -46,6 +50,7 @@ class AddItemViewModel(
     private var sourceType: String? = null
     private var sourceItemId: Long? = null
     private var sourceShoppingDetail: com.example.itemmanagement.data.entity.unified.ShoppingDetailEntity? = null
+    private var customAttributeDefinitionsById: Map<String, AttributeDefinitionEntity> = emptyMap()
 
     init {
         Log.d("AddItemViewModel", "=== 初始化添加ViewModel ===")
@@ -65,6 +70,18 @@ class AddItemViewModel(
         }
         
         Log.d("AddItemViewModel", "添加ViewModel初始化完成，当前fieldValues: $fieldValues")
+    }
+
+    fun registerAttributeDefinitions(definitions: List<AttributeDefinitionEntity>) {
+        customAttributeDefinitionsById = definitions.associateBy { it.id }
+        val enrichedFields = (_selectedFields.value ?: emptySet())
+            .map { field -> itemEnrichFieldReference(field, definitions) }
+            .toSet()
+        if (enrichedFields != _selectedFields.value) {
+            _selectedFields.value = enrichedFields
+            _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
+            saveToCache()
+        }
     }
 
     /**
@@ -246,6 +263,7 @@ class AddItemViewModel(
         _selectedFields.value = cache.selectedFields
         _photoUris.value = cache.photoUris
         _selectedTags.value = cache.selectedTags
+        _itemRuleBindings.value = cache.ruleBindings
         customOptionsMap = cache.customOptions.toMutableMap()
         customUnitsMap = cache.customUnits.toMutableMap()
         customTagsMap = cache.customTags.toMutableMap()
@@ -259,6 +277,7 @@ class AddItemViewModel(
         cache.selectedFields = _selectedFields.value ?: setOf()
         cache.photoUris = _photoUris.value ?: emptyList()
         cache.selectedTags = _selectedTags.value ?: mapOf()
+        cache.ruleBindings = _itemRuleBindings.value ?: emptyList()
         cache.customOptions = customOptionsMap.toMutableMap()
         cache.customUnits = customUnitsMap.toMutableMap()
         cache.customTags = customTagsMap.toMutableMap()
@@ -320,6 +339,7 @@ class AddItemViewModel(
                 if (customAttributes.isNotEmpty()) {
                     repository.saveCustomAttributes(customAttributes)
                 }
+                repository.replaceItemRuleBindings(sourceItemId!!, _itemRuleBindings.value ?: emptyList())
                 
                 // 🛒 添加日历事件：记录购物清单转入库存操作
                 addCalendarEventForShoppingTransferred(sourceItemId!!, updatedUnifiedItem.name, updatedUnifiedItem.category)
@@ -350,6 +370,7 @@ class AddItemViewModel(
                     repository.saveCustomAttributes(customAttributes)
                     android.util.Log.d("AddItemViewModel", "✅ 高级自定义属性保存成功: ${customAttributes.size}个")
                 }
+                repository.replaceItemRuleBindings(itemId, _itemRuleBindings.value ?: emptyList())
                 
                 // 打印保修相关字段值
                 android.util.Log.d("AddItemViewModel", "📋 保修字段检查:")
@@ -871,103 +892,15 @@ class AddItemViewModel(
         }
     }
 
-    private fun buildCustomAttributeEntities(
-        itemId: Long
-    ): List<com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity> {
-        return fieldValues.mapNotNull { (key, value) ->
-            if (!key.startsWith("custom_") || key.startsWith("custom_meta_") || key.startsWith("custom_include_")) {
-                return@mapNotNull null
-            }
-
-            val parts = key.split("_", limit = 3)
-            if (parts.size < 3) {
-                return@mapNotNull null
-            }
-
-            val defId = parts[1].toLongOrNull() ?: return@mapNotNull null
-            val rawType = fieldValues["custom_meta_${defId}_type"] as? String
-            val includeInTotal = when (val includeValue = fieldValues["custom_include_$defId"]) {
-                is Boolean -> includeValue
-                is String -> includeValue.equals("true", ignoreCase = true)
-                else -> true
-            }
-
-            when (rawType) {
-                com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity.TYPE_DATE -> {
-                    val dateString = (value as? String)?.trim().orEmpty()
-                    if (dateString.isBlank()) {
-                        null
-                    } else {
-                        com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity(
-                            itemId = itemId,
-                            definitionId = defId,
-                            valueText = null,
-                            valueNumber = null,
-                            valueDate = parseDate(dateString)?.time,
-                            includeInTotal = includeInTotal
-                        )
-                    }
-                }
-
-                com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity.TYPE_BOOLEAN -> {
-                    val numericValue = when (value) {
-                        is Boolean -> if (value) 1.0 else 0.0
-                        is Number -> value.toDouble()
-                        is String -> if (value.equals("true", ignoreCase = true)) 1.0 else 0.0
-                        else -> 0.0
-                    }
-                    com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity(
-                        itemId = itemId,
-                        definitionId = defId,
-                        valueText = null,
-                        valueNumber = numericValue,
-                        valueDate = null,
-                        includeInTotal = includeInTotal
-                    )
-                }
-
-                com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity.TYPE_NUMBER,
-                com.example.itemmanagement.data.entity.unified.CustomAttributeDefinitionEntity.TYPE_PRICE -> {
-                    val numericValue = when (value) {
-                        is Number -> value.toDouble()
-                        is String -> value.toDoubleOrNull()
-                        else -> null
-                    }
-                    if (numericValue == null) {
-                        null
-                    } else {
-                        com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity(
-                            itemId = itemId,
-                            definitionId = defId,
-                            valueText = null,
-                            valueNumber = numericValue,
-                            valueDate = null,
-                            includeInTotal = includeInTotal
-                        )
-                    }
-                }
-
-                else -> {
-                    val textValue = when (value) {
-                        null -> null
-                        is String -> value.trim().takeIf { it.isNotBlank() }
-                        else -> value.toString().takeIf { it.isNotBlank() }
-                    }
-                    if (textValue == null) {
-                        null
-                    } else {
-                        com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity(
-                            itemId = itemId,
-                            definitionId = defId,
-                            valueText = textValue,
-                            valueNumber = null,
-                            valueDate = null,
-                            includeInTotal = includeInTotal
-                        )
-                    }
-                }
-            }
-        }
+    private fun buildCustomAttributeEntities(itemId: Long): List<ItemCustomAttributeEntity> {
+        return itemBuildCustomAttributeEntities(
+            itemId = itemId,
+            fieldValues = fieldValues,
+            definitionsById = customAttributeDefinitionsById,
+            fallbackCurrencyCode = (fieldValues["币种"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (fieldValues["单价_unit"] as? String)?.takeIf { it.isNotBlank() }
+                ?: "CNY",
+        )
     }
 
     /**

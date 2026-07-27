@@ -39,6 +39,7 @@ import com.example.itemmanagement.data.dao.unified.ItemStateDao
 import com.example.itemmanagement.data.dao.unified.ItemStatusDefinitionDao
 import com.example.itemmanagement.data.dao.unified.CustomAttributeDefinitionDao
 import com.example.itemmanagement.data.dao.unified.ItemCustomAttributeDao
+import com.example.itemmanagement.data.dao.unified.ItemRuleBindingDao
 import com.example.itemmanagement.data.dao.unified.ShoppingDetailDao
 import com.example.itemmanagement.data.dao.unified.InventoryDetailDao
 import com.example.itemmanagement.data.dao.attribute.AttributeDefinitionDao
@@ -55,6 +56,7 @@ import com.example.itemmanagement.data.migration.UnifiedSchemaMigration
         ItemStatusDefinitionEntity::class,
         CustomAttributeDefinitionEntity::class,
         ItemCustomAttributeEntity::class,
+        ItemRuleBindingEntity::class,
         GalleryEntity::class,
         GalleryItemCrossRef::class,
         TagGroupEntity::class,
@@ -90,7 +92,7 @@ import com.example.itemmanagement.data.migration.UnifiedSchemaMigration
         // DeletedItemEntity::class,
         // WishlistItemEntity::class
     ],
-    version = 59,
+    version = 63,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -101,6 +103,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun itemStatusDefinitionDao(): ItemStatusDefinitionDao
     abstract fun customAttributeDefinitionDao(): CustomAttributeDefinitionDao
     abstract fun itemCustomAttributeDao(): ItemCustomAttributeDao
+    abstract fun itemRuleBindingDao(): ItemRuleBindingDao
     abstract fun shoppingDetailDao(): ShoppingDetailDao
     abstract fun inventoryDetailDao(): InventoryDetailDao
     
@@ -146,7 +149,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "item_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_5, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, UnifiedSchemaMigration.MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_5, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, UnifiedSchemaMigration.MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
@@ -2970,6 +2973,141 @@ abstract class AppDatabase : RoomDatabase() {
                         PRIMARY KEY(`id`)
                     )
                 """)
+            }
+        }
+        val MIGRATION_59_60 = object : Migration(59, 60) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `item_custom_attributes_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `itemId` INTEGER NOT NULL,
+                        `definitionId` TEXT NOT NULL,
+                        `valueText` TEXT,
+                        `valueNumber` REAL,
+                        `valueDate` INTEGER,
+                        `includeInTotal` INTEGER NOT NULL,
+                        `priceAmount` REAL,
+                        `priceCurrency` TEXT,
+                        `priceDate` INTEGER,
+                        `includeInAverage` INTEGER,
+                        `includeInDailyValue` INTEGER,
+                        `isRecurring` INTEGER,
+                        `recurrenceType` TEXT,
+                        `autoRenew` INTEGER,
+                        `nextChargeDate` INTEGER,
+                        FOREIGN KEY(`itemId`) REFERENCES `unified_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                database.execSQL("""
+                    INSERT INTO `item_custom_attributes_new` (
+                        `id`,
+                        `itemId`,
+                        `definitionId`,
+                        `valueText`,
+                        `valueNumber`,
+                        `valueDate`,
+                        `includeInTotal`,
+                        `priceAmount`,
+                        `priceCurrency`,
+                        `priceDate`,
+                        `includeInAverage`,
+                        `includeInDailyValue`,
+                        `isRecurring`,
+                        `recurrenceType`,
+                        `autoRenew`,
+                        `nextChargeDate`
+                    )
+                    SELECT
+                        `id`,
+                        `itemId`,
+                        CAST(`definitionId` AS TEXT),
+                        `valueText`,
+                        `valueNumber`,
+                        `valueDate`,
+                        `includeInTotal`,
+                        `priceAmount`,
+                        `priceCurrency`,
+                        `priceDate`,
+                        `includeInAverage`,
+                        `includeInDailyValue`,
+                        `isRecurring`,
+                        `recurrenceType`,
+                        `autoRenew`,
+                        `nextChargeDate`
+                    FROM `item_custom_attributes`
+                """)
+                database.execSQL("DROP TABLE `item_custom_attributes`")
+                database.execSQL("ALTER TABLE `item_custom_attributes_new` RENAME TO `item_custom_attributes`")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_item_custom_attributes_itemId` ON `item_custom_attributes` (`itemId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_item_custom_attributes_definitionId` ON `item_custom_attributes` (`definitionId`)")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_item_custom_attributes_itemId_definitionId` ON `item_custom_attributes` (`itemId`, `definitionId`)")
+            }
+        }
+        val MIGRATION_60_61 = object : Migration(60, 61) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE `attribute_definitions` ADD COLUMN `valueSource` TEXT NOT NULL DEFAULT 'INPUT'"
+                )
+                database.execSQL(
+                    "ALTER TABLE `attribute_definitions` ADD COLUMN `interactionMode` TEXT NOT NULL DEFAULT 'TEXT_INPUT'"
+                )
+                database.execSQL(
+                    "ALTER TABLE `attribute_definitions` ADD COLUMN `valuePropertiesJson` TEXT NOT NULL DEFAULT ''"
+                )
+                database.execSQL(
+                    """
+                    UPDATE `attribute_definitions`
+                    SET `interactionMode` = `inputMode`
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    """
+                    UPDATE `attribute_definitions`
+                    SET `valueSource` = CASE
+                        WHEN `optionSource` IN ('FIXED_OPTIONS_SYSTEM', 'FIXED_OPTIONS_USER') THEN 'FIXED'
+                        ELSE 'INPUT'
+                    END
+                    """.trimIndent()
+                )
+            }
+        }
+        val MIGRATION_61_62 = object : Migration(61, 62) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE `rule_definitions` ADD COLUMN `triggerModesJson` TEXT NOT NULL DEFAULT '[]'"
+                )
+                database.execSQL(
+                    "ALTER TABLE `rule_definitions` ADD COLUMN `systemInputsJson` TEXT NOT NULL DEFAULT '[]'"
+                )
+                database.execSQL(
+                    "ALTER TABLE `rule_definitions` ADD COLUMN `outputTargetsJson` TEXT NOT NULL DEFAULT '[]'"
+                )
+            }
+        }
+        val MIGRATION_62_63 = object : Migration(62, 63) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `item_rule_bindings` (
+                        `id` TEXT NOT NULL,
+                        `itemId` INTEGER NOT NULL,
+                        `ruleId` TEXT NOT NULL,
+                        `entryAttributeId` TEXT,
+                        `entrySlotKey` TEXT NOT NULL,
+                        `slotBindingsJson` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `creationSource` TEXT NOT NULL,
+                        `description` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`itemId`) REFERENCES `unified_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_item_rule_bindings_itemId` ON `item_rule_bindings` (`itemId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_item_rule_bindings_ruleId` ON `item_rule_bindings` (`ruleId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_item_rule_bindings_itemId_ruleId` ON `item_rule_bindings` (`itemId`, `ruleId`)")
             }
         }
     }

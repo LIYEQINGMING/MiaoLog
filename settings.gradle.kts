@@ -3,6 +3,7 @@
 // 插件管理：定义从何处获取 Gradle 插件
 pluginManagement {
     repositories {
+        maven { url = uri("$rootDir/local-maven") }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -11,6 +12,7 @@ pluginManagement {
         eachPlugin {
             when (requested.id.id) {
                 "com.google.dagger.hilt.android" -> useModule("com.google.dagger:hilt-android-gradle-plugin:2.50")
+                "org.gradle.toolchains.foojay-resolver-convention" -> useModule("org.gradle.toolchains:foojay-resolver:0.10.0")
             }
         }
     }

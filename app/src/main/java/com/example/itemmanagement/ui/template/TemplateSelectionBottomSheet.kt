@@ -74,7 +74,13 @@ fun TemplateSelectionScreen(
         if (dbTemplates.isEmpty()) {
             // Provide default if empty
             templates = listOf(
-                ItemTemplateEntity(id = -1, templateName = "通用模板", description = "默认的基础物品模板", selectedFields = "品牌,购买渠道,购入价格,存放位置,保质期")
+                ItemTemplateEntity(
+                    id = -1,
+                    templateName = "通用模板",
+                    description = "默认的基础物品模板",
+                    selectedFields = "品牌,规格",
+                    customAttributeIds = "[\"attr_system_status\",\"attr_system_tags\",\"attr_system_purchase_date\"]"
+                )
             )
         } else {
             templates = dbTemplates
