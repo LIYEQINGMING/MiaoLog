@@ -21,8 +21,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.example.itemmanagement.ItemManagementApplication
 import com.example.itemmanagement.R
@@ -52,6 +54,7 @@ import com.example.itemmanagement.utils.combineCategoryPath
 import com.example.itemmanagement.utils.SnackbarHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -111,6 +114,7 @@ class AddItemFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         hideBottomNavigation()
         hideActionBar()
+        observeAttributeCatalog()
         observeCategoryPickerResult()
         observeViewModel()
         initializeScreen()
@@ -211,6 +215,29 @@ class AddItemFragment : Fragment() {
                     showSaveSuccessDialog()
                 }
                 viewModel.onSaveResultConsumed()
+            }
+        }
+    }
+
+    private fun observeAttributeCatalog() {
+        val app = requireActivity().application as ItemManagementApplication
+        viewLifecycleOwner.lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                app.attributeRepository.ensureItemSystemAttributes()
+                app.attributeRepository.ensureSystemRules()
+            }
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    app.attributeRepository.getAllAttributeEntities().collect { definitions ->
+                        customAttributeDefinitions = definitions
+                        viewModel.registerAttributeDefinitions(definitions)
+                    }
+                }
+                launch {
+                    app.attributeRepository.getAllRules().collect { rules ->
+                        ruleDefinitions = rules
+                    }
+                }
             }
         }
     }

@@ -773,6 +773,10 @@ class AttributeRepository(
         }
     }
 
+    fun getAllAttributeEntities(): Flow<List<AttributeDefinitionEntity>> {
+        return attributeDefinitionDao.getAllDefinitions()
+    }
+
     suspend fun getAttributeById(id: String): AttributeDefinition? {
         return attributeDefinitionDao.getDefinitionById(id)?.toModel()
     }

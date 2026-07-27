@@ -21,8 +21,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.example.itemmanagement.ItemManagementApplication
@@ -35,6 +37,7 @@ import com.example.itemmanagement.ui.theme.LiquidGlassTheme
 import com.example.itemmanagement.utils.SnackbarHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,6 +62,7 @@ class EditItemFragment : Fragment() {
 
     private var customAttributeDefinitions by mutableStateOf<List<AttributeDefinitionEntity>>(emptyList())
     private var ruleDefinitions by mutableStateOf<List<RuleDefinition>>(emptyList())
+    private var hasBoundAttributeDefinitions = false
     private var currentPhotoUri: Uri? = null
     private var currentPhotoFile: File? = null
 
@@ -92,9 +96,9 @@ class EditItemFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         hideBottomNavigation()
         hideActionBar()
+        observeAttributeCatalog()
         observeCategoryPickerResult()
         observeViewModel()
-        loadAttributeDefinitions()
     }
 
     override fun onResume() {
@@ -160,23 +164,36 @@ class EditItemFragment : Fragment() {
         )
     }
 
-    private fun loadAttributeDefinitions() {
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val app = requireActivity().application as ItemManagementApplication
+    private fun observeAttributeCatalog() {
+        val app = requireActivity().application as ItemManagementApplication
+        viewLifecycleOwner.lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
                 app.attributeRepository.ensureItemSystemAttributes()
                 app.attributeRepository.ensureSystemRules()
-                val definitions = app.repository.getAllAttributeDefinitions()
-                val rules = app.attributeRepository.getAllRules().first()
-                withContext(Dispatchers.Main) {
-                    customAttributeDefinitions = definitions
-                    ruleDefinitions = rules
-                    viewModel.bindAttributeDefinitions(definitions, rules)
+            }
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    app.attributeRepository.getAllAttributeEntities().collect { definitions ->
+                        customAttributeDefinitions = definitions
+                        bindAttributeCatalogIfReady()
+                    }
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("EditItemFragment", "加载属性定义失败", e)
+                launch {
+                    app.attributeRepository.getAllRules().collect { rules ->
+                        ruleDefinitions = rules
+                        bindAttributeCatalogIfReady()
+                    }
+                }
             }
         }
+    }
+
+    private fun bindAttributeCatalogIfReady() {
+        if (hasBoundAttributeDefinitions || customAttributeDefinitions.isEmpty() || ruleDefinitions.isEmpty()) {
+            return
+        }
+        hasBoundAttributeDefinitions = true
+        viewModel.bindAttributeDefinitions(customAttributeDefinitions, ruleDefinitions)
     }
 
     private fun handleNavigateBack() {
