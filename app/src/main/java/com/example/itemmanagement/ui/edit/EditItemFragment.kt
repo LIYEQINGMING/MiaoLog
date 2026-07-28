@@ -57,7 +57,13 @@ class EditItemFragment : Fragment() {
 
     private val viewModel: EditItemViewModel by viewModels {
         val app = requireActivity().application as ItemManagementApplication
-        EditItemViewModelFactory(app.repository, cacheViewModel, args.itemId, app.warrantyRepository)
+        EditItemViewModelFactory(
+            app.repository,
+            cacheViewModel,
+            args.itemId,
+            app.attributeRepository,
+            app.warrantyRepository,
+        )
     }
 
     private var customAttributeDefinitions by mutableStateOf<List<AttributeDefinitionEntity>>(emptyList())

@@ -107,6 +107,11 @@ enum class RuleTriggerMode {
     ON_SYSTEM_INPUT_CHANGED,
 }
 
+enum class RuleActivationMode {
+    ALWAYS_ON,
+    USER_TOGGLE,
+}
+
 enum class RuleBindingStatus {
     DRAFT,
     ACTIVE,
@@ -139,6 +144,13 @@ data class RuleRuntimeMetadata(
     val ruleId: String,
     val systemInputs: List<RuleSystemInputDefinition> = emptyList(),
     val outputTargets: List<RuleOutputTargetDefinition> = emptyList(),
+)
+
+data class RuleToggleUiConfig(
+    val labelWhenEnabled: String = "已启用",
+    val labelWhenDisabled: String = "已停用",
+    val anchorSlotKey: String? = null,
+    val defaultEnabled: Boolean = true,
 )
 
 data class SystemVariableConfigDefinition(
@@ -324,7 +336,7 @@ fun builtInSystemVariableDefinitions(): List<SystemVariableDefinition> {
             valueType = AttributeValueType.NUMBER,
             category = SystemVariableCategory.AGGREGATION,
             providerType = SystemVariableProviderType.AGGREGATION,
-            writePolicy = SystemVariableWritePolicy.READ_ONLY,
+            writePolicy = SystemVariableWritePolicy.RULE_WRITABLE,
             refreshPolicy = SystemVariableRefreshPolicy.ON_AGGREGATE_RECALCULATE,
             implementationStatus = SystemVariableImplementationStatus.IMPLEMENTED,
             description = "当前计入总数量统计的全局数量结果",

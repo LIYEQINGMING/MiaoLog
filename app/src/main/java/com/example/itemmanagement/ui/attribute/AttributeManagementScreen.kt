@@ -71,6 +71,7 @@ import com.example.itemmanagement.data.model.attribute.AttributeInputMode
 import com.example.itemmanagement.data.model.attribute.AttributeNumberFormat
 import com.example.itemmanagement.data.model.attribute.AttributeValueSource
 import com.example.itemmanagement.data.model.attribute.AttributeValueType
+import com.example.itemmanagement.data.model.attribute.RuleActivationMode
 import com.example.itemmanagement.data.model.attribute.RuleComputationType
 import com.example.itemmanagement.data.model.attribute.RuleOutputTargetType
 import com.example.itemmanagement.data.model.attribute.RuleOutputUpdateMode
@@ -964,7 +965,6 @@ private fun AttributeCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ListItemIcon(icon = item.icon)
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -986,23 +986,6 @@ private fun AttributeCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "来源模板：${item.templateName ?: "无"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "规则：${item.ruleSummary}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = item.usageCountText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -1324,76 +1307,12 @@ private fun AttributeDetailPage(
             )
         }
         item {
-            SectionCard(title = "字段定义") {
+            SectionCard(title = "属性定义") {
+                DetailLine("属性名", detail.name)
+                DetailLine("属性描述", detail.description ?: "暂无描述")
                 DetailLine("值类型", detail.valueDefinition.valueType)
                 DetailLine("值来源", detail.valueDefinition.valueSource)
-                if (detail.valueDefinition.interactionMode.isNotBlank()) {
-                    DetailLine("交互方式", detail.valueDefinition.interactionMode)
-                }
-                detail.valueDefinition.properties.forEach { property ->
-                    DetailLine(property.label, property.value)
-                }
                 DetailLine("来源模板", detail.templateName ?: "无")
-            }
-        }
-        item {
-            SectionCard(title = "规则绑定") {
-                if (detail.ruleBindings.isEmpty()) {
-                    Text("当前未绑定规则", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    detail.ruleBindings.forEach { binding ->
-                        RuleBindingCard(binding)
-                    }
-                }
-            }
-        }
-        item {
-            SectionCard(title = "依赖补齐说明") {
-                if (detail.dependencyHints.isEmpty()) {
-                    Text("该属性当前不会触发表单依赖自动补齐。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    detail.dependencyHints.forEach { hint ->
-                        DetailLine("触发属性", hint.triggerAttributeName)
-                        DetailLine("自动补齐输入", hint.autoFillInputs.joinToString(" / "))
-                        DetailLine("只读输出", hint.readonlyOutputs.joinToString(" / "))
-                    }
-                }
-            }
-        }
-        item {
-            SectionCard(title = "操作") {
-                Text(
-                    text = if (detail.isEditable) "当前属性允许继续编辑字段定义与规则绑定范围。" else "系统属性当前阶段仅允许查看，不开放编辑。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (detail.isEditable) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onEdit)
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null)
-                        Text("编辑属性", fontWeight = FontWeight.Medium)
-                    }
-                }
-                if (detail.isDeletable) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onDelete)
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
-                        Text("删除属性", fontWeight = FontWeight.Medium)
-                    }
-                }
             }
         }
     }
@@ -1739,14 +1658,14 @@ private fun AttributeEditorPage(
                     onSelected = { valueSource = it },
                 )
                 Text(
-                    text = "流程：值类型 -> 值来源 -> 值属性配置 -> 规则绑定",
+                    text = "流程：值类型 -> 值来源 -> 值属性配置",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 when (valueType) {
                     AttributeValueType.TEXT -> {
                         Text(
-                            text = "文本类型当前不配置值属性，直接进入规则绑定。",
+                            text = "文本类型当前不配置额外值属性。",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -1906,138 +1825,6 @@ private fun AttributeEditorPage(
                             )
                         }
                     }
-                }
-            }
-        }
-        item {
-            SectionCard(title = "规则绑定") {
-                if (ruleCandidates.isEmpty()) {
-                    Text("当前暂无已配置规则绑定，可以先添加一条。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    ruleCandidates.forEach { candidate ->
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                FilterChip(
-                                    selected = candidate.selectedEntrySlotKey.isNotBlank(),
-                                    onClick = {},
-                                    label = { Text("${candidate.ruleName} · ${candidate.ruleTypeLabel}") },
-                                )
-                                Text(
-                                    text = "触发：${candidate.triggerSummary}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Text(
-                                    text = "槽位：${candidate.slotCountSummary}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Text(
-                                    text = "输入：${candidate.inputSlotSummary}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Text(
-                                    text = "输出：${candidate.outputSlotSummary}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                if (candidate.selectedEntrySlotKey.isNotBlank()) {
-                                    DetailLine("入口槽位", candidate.selectedEntrySlotKey)
-                                    DetailLine("完整性", if (candidate.isComplete) "已完成" else "待补齐")
-                                    DetailLine("依赖属性", summarizeBindingDependencies(candidate))
-                                    DetailLine("输出影响", summarizeBindingOutputs(candidate))
-                                    val quickCreatedSummary = summarizeBindingQuickCreatedAttributes(candidate)
-                                    if (quickCreatedSummary != "无") {
-                                        DetailLine("快捷创建", quickCreatedSummary)
-                                    }
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(
-                                        onClick = {
-                                            onOpenRuleBindingWizard(
-                                                draft.copy(
-                                                    name = name,
-                                                    description = description,
-                                                    valueType = valueType,
-                                                    valueSource = valueSource,
-                                                    numberFormat = numberFormat,
-                                                    unitCategory = unitCategory,
-                                                    defaultUnit = defaultUnit,
-                                                    decimalPlacesText = decimalPlacesText,
-                                                    allowNegative = allowNegative,
-                                                    booleanInputMode = booleanInputMode,
-                                                    trueLabel = trueLabel,
-                                                    falseLabel = falseLabel,
-                                                    optionItemsText = optionItemsText,
-                                                    isMultiSelect = isMultiSelect,
-                                                    systemVariableKey = systemVariableKey,
-                                                    defaultValue = defaultValue,
-                                                    ruleCandidates = ruleCandidates,
-                                                    pendingCreatedAttributes = pendingCreatedAttributes,
-                                                ),
-                                                candidate.ruleId,
-                                            )
-                                        }
-                                    ) {
-                                        Text(if (candidate.selectedEntrySlotKey.isBlank()) "配置绑定" else "编辑绑定")
-                                    }
-                                    if (candidate.selectedEntrySlotKey.isNotBlank()) {
-                                        TextButton(
-                                            onClick = { pendingRemoveBinding = candidate }
-                                        ) {
-                                            Text("移除绑定")
-                                        }
-                                    }
-                                }
-                                if (candidate.selectedEntrySlotKey.isNotBlank()) {
-                                    Text(
-                                        text = "编辑时可替换依赖属性与输出落点；移除后会解除该规则实例对以上属性的读写关联。",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                TextButton(
-                    onClick = {
-                        onOpenRuleBindingWizard(
-                            draft.copy(
-                                name = name,
-                                description = description,
-                                valueType = valueType,
-                                valueSource = valueSource,
-                                numberFormat = numberFormat,
-                                unitCategory = unitCategory,
-                                defaultUnit = defaultUnit,
-                                decimalPlacesText = decimalPlacesText,
-                                allowNegative = allowNegative,
-                                booleanInputMode = booleanInputMode,
-                                trueLabel = trueLabel,
-                                falseLabel = falseLabel,
-                                optionItemsText = optionItemsText,
-                                isMultiSelect = isMultiSelect,
-                                systemVariableKey = systemVariableKey,
-                                defaultValue = defaultValue,
-                                ruleCandidates = ruleCandidates,
-                                pendingCreatedAttributes = pendingCreatedAttributes,
-                            ),
-                            null,
-                        )
-                    }
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("添加规则")
                 }
             }
         }
@@ -2575,6 +2362,19 @@ private fun RuleEditorPage(
     var name by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.name) }
     var description by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.description) }
     var computationType by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.computationType) }
+    var activationMode by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.activationMode) }
+    var toggleLabelWhenEnabled by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.toggleLabelWhenEnabled)
+    }
+    var toggleLabelWhenDisabled by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.toggleLabelWhenDisabled)
+    }
+    var toggleAnchorSlotKey by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.toggleAnchorSlotKey)
+    }
+    var toggleDefaultEnabled by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.toggleDefaultEnabled)
+    }
     var triggerModes by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.triggerModes) }
     var expression by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.expression) }
     var slots by remember(draft.id, draft.templateId) {
@@ -3009,6 +2809,19 @@ private fun RuleWorkbenchPage(
     var name by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.name) }
     var description by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.description) }
     var computationType by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.computationType) }
+    var activationMode by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(draft.activationMode) }
+    var toggleLabelWhenEnabled by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.toggleLabelWhenEnabled)
+    }
+    var toggleLabelWhenDisabled by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.toggleLabelWhenDisabled)
+    }
+    var toggleAnchorSlotKey by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.toggleAnchorSlotKey)
+    }
+    var toggleDefaultEnabled by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.toggleDefaultEnabled)
+    }
     val initialSlots = remember(draft.id, draft.templateId) {
         draft.slots.ifEmpty {
             listOf(
@@ -3044,6 +2857,10 @@ private fun RuleWorkbenchPage(
 
     val inputSlots = slots.filter { it.direction == RuleSlotDirection.INPUT }
     val outputSlots = slots.filter { it.direction == RuleSlotDirection.OUTPUT }
+    val attributeInputSlots = inputSlots.filter { it.sourceType == RuleSlotSourceType.ATTRIBUTE_INPUT }
+    val toggleAnchorOptions = listOf("" to "仅在规则卡片显示") + attributeInputSlots.map {
+        it.key to it.name.ifBlank { it.key }
+    }
     val decoder = remember(expressionField.text, slots) {
         decodeRuleWorkbenchExpression(
             expression = expressionField.text,
@@ -3159,6 +2976,64 @@ private fun RuleWorkbenchPage(
             }
         }
         item {
+            SectionCard(title = "运行方式") {
+                EnumChipGroup(
+                    title = "规则启用方式",
+                    options = RuleActivationMode.entries.toList(),
+                    selected = activationMode,
+                    label = { ruleActivationModeLabel(it) },
+                    onSelected = { activationMode = it },
+                )
+                Text(
+                    text = if (activationMode == RuleActivationMode.ALWAYS_ON) {
+                        "始终运行的规则不会向用户暴露启停开关，适合始终生效的派生关系。"
+                    } else {
+                        "用户开关控制适合“计入总价值 / 不计入总价值”这类业务动作。规则定义负责文案与默认状态，物品规则实例负责当前启停。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (activationMode == RuleActivationMode.USER_TOGGLE) {
+                    OutlinedTextField(
+                        value = toggleLabelWhenEnabled,
+                        onValueChange = { toggleLabelWhenEnabled = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("启用态文案") },
+                        supportingText = { Text("例如：计入总价值") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = toggleLabelWhenDisabled,
+                        onValueChange = { toggleLabelWhenDisabled = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("停用态文案") },
+                        supportingText = { Text("例如：不计入总价值") },
+                        singleLine = true,
+                    )
+                    EnumChipGroup(
+                        title = "开关显示位置",
+                        options = toggleAnchorOptions,
+                        selected = toggleAnchorOptions.firstOrNull { it.first == toggleAnchorSlotKey }
+                            ?: toggleAnchorOptions.first(),
+                        label = { it.second },
+                        onSelected = { option -> toggleAnchorSlotKey = option.first },
+                    )
+                    FilterChip(
+                        selected = toggleDefaultEnabled,
+                        onClick = { toggleDefaultEnabled = !toggleDefaultEnabled },
+                        label = { Text(if (toggleDefaultEnabled) "默认启用" else "默认停用") },
+                    )
+                    if (attributeInputSlots.isEmpty()) {
+                        Text(
+                            text = "当前还没有属性输入槽位，所以开关暂时只会显示在规则卡片里。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        item {
             SectionCard(title = "变量管理") {
                 Text(
                     text = "变量就是公式里能被引用的输入或结果。先添加变量，再把它们拼进公式里。",
@@ -3260,6 +3135,11 @@ private fun RuleWorkbenchPage(
                             description = description,
                             computationType = computationType,
                             triggerModes = draft.triggerModes,
+                            activationMode = activationMode,
+                            toggleLabelWhenEnabled = toggleLabelWhenEnabled,
+                            toggleLabelWhenDisabled = toggleLabelWhenDisabled,
+                            toggleAnchorSlotKey = toggleAnchorSlotKey,
+                            toggleDefaultEnabled = toggleDefaultEnabled,
                             slots = slots,
                             expression = expressionField.text,
                         )
@@ -4333,6 +4213,11 @@ private fun attributeNumberFormatLabel(format: AttributeNumberFormat): String = 
     AttributeNumberFormat.PRICE -> "量值"
     AttributeNumberFormat.PERCENTAGE -> "百分比"
     AttributeNumberFormat.WITH_UNIT -> "量值"
+}
+
+private fun ruleActivationModeLabel(mode: RuleActivationMode): String = when (mode) {
+    RuleActivationMode.ALWAYS_ON -> "始终运行"
+    RuleActivationMode.USER_TOGGLE -> "用户开关控制"
 }
 
 private fun booleanAttributeInputModeLabel(mode: AttributeInputMode): String = when (mode) {

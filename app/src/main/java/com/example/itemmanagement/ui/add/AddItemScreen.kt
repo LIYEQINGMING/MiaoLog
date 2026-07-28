@@ -44,22 +44,17 @@ import com.example.itemmanagement.ui.components.ItemFieldPickerSheet
 import com.example.itemmanagement.ui.components.ItemFormScaffold
 import com.example.itemmanagement.ui.components.ItemImageSection
 import com.example.itemmanagement.ui.components.ItemQuantityRow
-import com.example.itemmanagement.ui.components.ItemReadonlyRuleOutputCard
 import com.example.itemmanagement.ui.components.ItemRuleBindingSection
 import com.example.itemmanagement.ui.components.ItemSectionAddButton
 import com.example.itemmanagement.ui.components.ItemSupplementFieldItem
 import com.example.itemmanagement.ui.components.itemAddFieldToSection
 import com.example.itemmanagement.ui.components.itemApplyRuleRuntimeOutputsFromBindings
-import com.example.itemmanagement.ui.components.itemBooleanValue
-import com.example.itemmanagement.ui.components.itemBuildReadonlyRuleOutputFieldsFromBindings
 import com.example.itemmanagement.ui.components.itemBuildSupplementFields
 import com.example.itemmanagement.ui.components.itemCustomFieldName
 import com.example.itemmanagement.ui.components.itemIsBaseIntrinsicField
 import com.example.itemmanagement.ui.components.itemRemoveFieldFromCurrentForm
+import com.example.itemmanagement.ui.components.itemResolveAttributeToggleStates
 import com.example.itemmanagement.ui.components.itemResolveDerivedAttributeFieldNamesFromBindings
-import com.example.itemmanagement.ui.components.itemResolveRuleOutputStateFromBindings
-import com.example.itemmanagement.ui.components.itemRuleOutputDefinitionId
-import com.example.itemmanagement.ui.components.itemRuleOutputKey
 import com.example.itemmanagement.ui.components.itemSelectedCustomDefinitions
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -97,11 +92,14 @@ fun AddItemScreen(
     val selectedFields by viewModel.selectedFields.observeAsState(emptySet())
     val photoUris by viewModel.photoUris.observeAsState(emptyList())
     val itemRuleBindings by viewModel.itemRuleBindings.observeAsState(emptyList())
+    val mergedAttributeDefinitions = remember(customAttributeDefinitions, fieldVersion) {
+        (customAttributeDefinitions + viewModel.getTransientAttributeDefinitions()).distinctBy { it.id }
+    }
 
     val name = (viewModel.getFieldValue("名称") as? String).orEmpty()
     val selectedFieldNames = remember(selectedFields) { selectedFields.map { it.name }.toSet() }
-    val templateLockedFields = remember(selectedTemplate, customAttributeDefinitions) {
-        buildTemplateLockedFields(selectedTemplate, customAttributeDefinitions)
+    val templateLockedFields = remember(selectedTemplate, mergedAttributeDefinitions) {
+        buildTemplateLockedFields(selectedTemplate, mergedAttributeDefinitions)
     }
 
     var activeSheet by rememberSaveable { mutableStateOf<AddFieldSection?>(null) }
@@ -120,39 +118,36 @@ fun AddItemScreen(
     val baseFields = remember(selectedFieldNames, fieldVersion) {
         BaseDefaultFields + BaseOptionalFields.filter { selectedFieldNames.contains(it) }
     }
-    val supplementFields = remember(selectedFieldNames, customAttributeDefinitions, fieldVersion) {
-        buildSupplementFields(selectedFieldNames, customAttributeDefinitions)
+    val supplementFields = remember(selectedFieldNames, mergedAttributeDefinitions, fieldVersion) {
+        buildSupplementFields(selectedFieldNames, mergedAttributeDefinitions)
     }
-    val selectedCustomDefinitions = remember(selectedFields, customAttributeDefinitions) {
-        itemSelectedCustomDefinitions(selectedFields, customAttributeDefinitions)
+    val selectedRuleAttributeDefinitions = remember(selectedFieldNames, mergedAttributeDefinitions) {
+        mergedAttributeDefinitions.filter { definition ->
+            itemCustomFieldName(definition) in selectedFieldNames
+        }
     }
-    val readonlyDerivedFieldNames = remember(itemRuleBindings, customAttributeDefinitions, ruleDefinitions) {
+    val selectedCustomDefinitions = remember(selectedFields, mergedAttributeDefinitions) {
+        itemSelectedCustomDefinitions(selectedFields, mergedAttributeDefinitions)
+    }
+    val readonlyDerivedFieldNames = remember(itemRuleBindings, mergedAttributeDefinitions, ruleDefinitions) {
         itemResolveDerivedAttributeFieldNamesFromBindings(
             itemRuleBindings = itemRuleBindings,
-            allDefinitions = customAttributeDefinitions,
+            allDefinitions = mergedAttributeDefinitions,
             ruleDefinitions = ruleDefinitions,
         )
     }
-    val readonlyRuleOutputFields = remember(itemRuleBindings, customAttributeDefinitions, ruleDefinitions) {
-        itemBuildReadonlyRuleOutputFieldsFromBindings(
-            itemRuleBindings = itemRuleBindings,
-            allDefinitions = customAttributeDefinitions,
-            ruleDefinitions = ruleDefinitions,
-        )
-    }
-
-    LaunchedEffect(itemRuleBindings, customAttributeDefinitions, ruleDefinitions, fieldVersion) {
+    LaunchedEffect(itemRuleBindings, mergedAttributeDefinitions, ruleDefinitions, fieldVersion) {
         itemApplyRuleRuntimeOutputsFromBindings(
             viewModel = viewModel,
             itemRuleBindings = itemRuleBindings,
-            allDefinitions = customAttributeDefinitions,
+            allDefinitions = mergedAttributeDefinitions,
             ruleDefinitions = ruleDefinitions,
         )
     }
 
-    val availableSupplementFields = remember(selectedCustomDefinitions, customAttributeDefinitions) {
+    val availableSupplementFields = remember(selectedCustomDefinitions, mergedAttributeDefinitions) {
         val selectedIds = selectedCustomDefinitions.map { it.id }.toSet()
-        customAttributeDefinitions
+        mergedAttributeDefinitions
             .filterNot { it.id in selectedIds }
             .map { itemCustomFieldName(it) }
             .distinct()
@@ -184,6 +179,9 @@ fun AddItemScreen(
                 BaseFieldsContent(
                     viewModel = viewModel,
                     visibleFields = baseFields,
+                    customAttributeDefinitions = mergedAttributeDefinitions,
+                    itemRuleBindings = itemRuleBindings,
+                    ruleDefinitions = ruleDefinitions,
                     onShowCategoryPicker = onShowCategoryPicker,
                 )
             },
@@ -192,7 +190,9 @@ fun AddItemScreen(
                     ItemSupplementFieldItem(
                         fieldName = fieldName,
                         viewModel = viewModel,
-                        customAttributeDefinitions = customAttributeDefinitions,
+                        customAttributeDefinitions = mergedAttributeDefinitions,
+                        itemRuleBindings = itemRuleBindings,
+                        ruleDefinitions = ruleDefinitions,
                         readonlyDerivedFieldNames = readonlyDerivedFieldNames,
                         locked = fieldName in templateLockedFields || fieldName in readonlyDerivedFieldNames,
                         onDelete = { pendingDeleteField = fieldName },
@@ -217,41 +217,10 @@ fun AddItemScreen(
                     viewModel = viewModel,
                     itemRuleBindings = itemRuleBindings,
                     ruleDefinitions = ruleDefinitions,
-                    availableAttributeDefinitions = selectedCustomDefinitions,
+                    availableAttributeDefinitions = selectedRuleAttributeDefinitions,
                 )
             },
-            supplementSection = {
-                if (selectedCustomDefinitions.isEmpty()) {
-                    Text(
-                        text = "先在属性页为当前物品添加属性，再回来把这些属性绑定到规则槽位里。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else if (readonlyRuleOutputFields.isEmpty()) {
-                    Text(
-                        text = "当前规则还没有只读输出预览。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    readonlyRuleOutputFields.forEach { fieldName ->
-                        val bindingId = itemRuleOutputDefinitionId(fieldName) ?: return@forEach
-                        val outputKey = itemRuleOutputKey(fieldName) ?: return@forEach
-                        val outputState = itemResolveRuleOutputStateFromBindings(
-                            bindingId = bindingId,
-                            outputKey = outputKey,
-                            viewModel = viewModel,
-                            itemRuleBindings = itemRuleBindings,
-                            allDefinitions = customAttributeDefinitions,
-                            ruleDefinitions = ruleDefinitions,
-                        )
-                        ItemReadonlyRuleOutputCard(
-                            title = outputState.title,
-                            value = outputState.value,
-                            placeholder = outputState.placeholder,
-                            supportText = outputState.supportText,
-                        )
-                    }
-                }
-            },
+            supplementSection = {},
             functionSection = null,
             saveButtonText = "保存物品",
             isSaveEnabled = name.isNotBlank(),
@@ -266,7 +235,7 @@ fun AddItemScreen(
                 AddFieldSection.SUPPLEMENT -> availableSupplementFields
                 null -> emptyList()
             },
-            customAttributeDefinitions = customAttributeDefinitions,
+            customAttributeDefinitions = mergedAttributeDefinitions,
             onDismiss = { activeSheet = null },
             onFieldSelected = { field ->
                 itemAddFieldToSection(
@@ -371,10 +340,21 @@ private fun AddHeaderCard(
 private fun BaseFieldsContent(
     viewModel: AddItemViewModel,
     visibleFields: List<String>,
+    customAttributeDefinitions: List<AttributeDefinitionEntity>,
+    itemRuleBindings: List<com.example.itemmanagement.data.model.attribute.RuleBindingInstance>,
+    ruleDefinitions: List<RuleDefinition>,
     onShowCategoryPicker: () -> Unit,
 ) {
     val categoryPath = (viewModel.getFieldValue("分类") as? String).orEmpty()
     val categoryIcon = remember(categoryPath) { viewModel.getCategoryIcon(categoryPath) }
+    val quantityToggleStates = remember(itemRuleBindings, ruleDefinitions, customAttributeDefinitions) {
+        itemResolveAttributeToggleStates(
+            fieldName = "数量",
+            itemRuleBindings = itemRuleBindings,
+            ruleDefinitions = ruleDefinitions,
+            allDefinitions = customAttributeDefinitions,
+        )
+    }
 
     ItemCompactTextRow(
         label = "物品名称",
@@ -391,12 +371,20 @@ private fun BaseFieldsContent(
         onClick = onShowCategoryPicker,
     )
 
-    ItemQuantityRow(
-        viewModel = viewModel,
-        showExcludeFromTotalCountAction = true,
-        excludeFromTotalCount = itemBooleanValue(viewModel.getFieldValue("不计入总数量")),
-        onExcludeFromTotalCountChange = { viewModel.saveFieldValue("不计入总数量", it) },
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ItemQuantityRow(
+            viewModel = viewModel,
+        )
+        quantityToggleStates.forEach { toggleState ->
+            com.example.itemmanagement.ui.components.ItemAttributeActionRow(
+                title = toggleState.label.ifBlank { toggleState.ruleName },
+                checked = toggleState.binding.isEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.addOrUpdateItemRuleBinding(toggleState.binding.copy(isEnabled = enabled))
+                }
+            )
+        }
+    }
 
     visibleFields.filterNot { it in BaseDefaultFields }.forEach { fieldName ->
         ItemCompactTextRow(

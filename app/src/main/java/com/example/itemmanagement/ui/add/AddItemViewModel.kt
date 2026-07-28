@@ -2,8 +2,16 @@ package com.example.itemmanagement.ui.add
 
 import androidx.lifecycle.viewModelScope
 import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
+import com.example.itemmanagement.data.model.attribute.AttributeDefinition
+import com.example.itemmanagement.data.model.attribute.AttributeInputMode
+import com.example.itemmanagement.data.model.attribute.AttributeOwnerType
+import com.example.itemmanagement.data.model.attribute.AttributeValueSource
+import com.example.itemmanagement.data.model.attribute.AttributeValueType
+import com.example.itemmanagement.data.model.attribute.defaultValuePropertiesFor
+import com.example.itemmanagement.data.model.attribute.toLegacyOptionSource
 import com.example.itemmanagement.data.repository.UnifiedItemRepository
 import com.example.itemmanagement.data.repository.WarrantyRepository
+import com.example.itemmanagement.data.repository.AttributeRepository
 import com.example.itemmanagement.data.entity.LocationEntity
 import com.example.itemmanagement.data.entity.PhotoEntity
 import com.example.itemmanagement.data.entity.TagEntity
@@ -13,6 +21,7 @@ import com.example.itemmanagement.data.entity.unified.ItemCustomAttributeEntity
 import com.example.itemmanagement.data.entity.unified.UnifiedItemEntity
 import com.example.itemmanagement.data.entity.unified.InventoryDetailEntity
 import com.example.itemmanagement.data.entity.unified.ItemStateType
+import com.example.itemmanagement.data.model.attribute.RuleDefinition
 import kotlinx.coroutines.flow.first
 import com.example.itemmanagement.data.mapper.toItemEntity
 import com.example.itemmanagement.data.mapper.toLocationEntity
@@ -25,14 +34,23 @@ import com.example.itemmanagement.ui.common.ValidationType
 import com.example.itemmanagement.ui.common.DisplayStyle
 import com.example.itemmanagement.ui.base.BaseItemViewModel
 import com.example.itemmanagement.ui.base.ItemStateCacheViewModel
+import com.example.itemmanagement.ui.components.itemAttributeTypeKey
 import com.example.itemmanagement.ui.components.itemBuildCustomAttributeEntities
+import com.example.itemmanagement.ui.components.itemBuildFormField
+import com.example.itemmanagement.ui.components.itemBuildBoundRuleBinding
+import com.example.itemmanagement.ui.components.itemCurrencyOptions
+import com.example.itemmanagement.ui.components.itemCustomFieldName
+import com.example.itemmanagement.ui.components.itemCustomIncludeFieldName
+import com.example.itemmanagement.ui.components.itemCustomMetaTypeFieldName
 import com.example.itemmanagement.ui.components.itemEnrichFieldReference
+import com.example.itemmanagement.ui.components.itemIsPriceAttribute
 import com.example.itemmanagement.utils.combineCategoryPath
 import com.example.itemmanagement.utils.normalizeCategoryPath
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import android.util.Log
+import com.google.gson.Gson
 
 /**
  * 添加物品 ViewModel
@@ -43,6 +61,7 @@ import android.util.Log
 class AddItemViewModel(
     repository: UnifiedItemRepository,
     cacheViewModel: ItemStateCacheViewModel,
+    private val attributeRepository: AttributeRepository,
     private val warrantyRepository: WarrantyRepository? = null  // 保修仓库（可选，保持向后兼容）
 ) : BaseItemViewModel(repository, cacheViewModel) {
 
@@ -51,6 +70,9 @@ class AddItemViewModel(
     private var sourceItemId: Long? = null
     private var sourceShoppingDetail: com.example.itemmanagement.data.entity.unified.ShoppingDetailEntity? = null
     private var customAttributeDefinitionsById: Map<String, AttributeDefinitionEntity> = emptyMap()
+    private var availableAttributeDefinitions: List<AttributeDefinitionEntity> = emptyList()
+    private var availableRuleDefinitions: List<RuleDefinition> = emptyList()
+    private val transientAttributeDefinitions = mutableListOf<AttributeDefinitionEntity>()
 
     init {
         Log.d("AddItemViewModel", "=== 初始化添加ViewModel ===")
@@ -73,15 +95,78 @@ class AddItemViewModel(
     }
 
     fun registerAttributeDefinitions(definitions: List<AttributeDefinitionEntity>) {
-        customAttributeDefinitionsById = definitions.associateBy { it.id }
+        availableAttributeDefinitions = (definitions + transientAttributeDefinitions).distinctBy { it.id }
+        customAttributeDefinitionsById = availableAttributeDefinitions.associateBy { it.id }
         val enrichedFields = (_selectedFields.value ?: emptySet())
-            .map { field -> itemEnrichFieldReference(field, definitions) }
+            .map { field -> itemEnrichFieldReference(field, availableAttributeDefinitions) }
             .toSet()
         if (enrichedFields != _selectedFields.value) {
             _selectedFields.value = enrichedFields
             _fieldVersion.value = (_fieldVersion.value ?: 0) + 1
             saveToCache()
         }
+        syncSuggestedSystemRuleBindings()
+    }
+
+    override fun getTransientAttributeDefinitions(): List<AttributeDefinitionEntity> {
+        return transientAttributeDefinitions.toList()
+    }
+
+    override suspend fun createQuickAttribute(
+        name: String,
+        valueType: AttributeValueType,
+    ): AttributeDefinitionEntity? {
+        val normalizedName = name.trim()
+        if (normalizedName.isBlank()) {
+            return null
+        }
+
+        val existing = (availableAttributeDefinitions + transientAttributeDefinitions)
+            .firstOrNull { it.name == normalizedName }
+        if (existing != null) {
+            ensureQuickAttributeSelected(existing)
+            return existing
+        }
+
+        val interactionMode = quickCreateInputMode(valueType)
+        val valueProperties = defaultValuePropertiesFor(valueType)
+        val definition = AttributeDefinition(
+            id = "attr_quick_${UUID.randomUUID()}",
+            key = "quick_${System.currentTimeMillis()}_${normalizedName.hashCode().toString().replace('-', 'n')}",
+            name = normalizedName,
+            ownerType = AttributeOwnerType.CUSTOM,
+            valueType = valueType,
+            valueSource = AttributeValueSource.INPUT,
+            inputMode = interactionMode,
+            interactionMode = interactionMode,
+            optionSource = AttributeValueSource.INPUT.toLegacyOptionSource(valueProperties),
+            valueProperties = valueProperties,
+            optionItems = valueProperties.optionItems,
+            isMultiValue = valueProperties.isMultiValue,
+            icon = quickCreateIcon(valueType),
+            ruleBindings = emptyList(),
+            description = null,
+        )
+        attributeRepository.saveAttribute(definition)
+        val entity = definition.toQuickCreatedEntity()
+        transientAttributeDefinitions.removeAll { it.id == entity.id }
+        transientAttributeDefinitions.add(0, entity)
+        availableAttributeDefinitions = (availableAttributeDefinitions + entity).distinctBy { it.id }
+        customAttributeDefinitionsById = (availableAttributeDefinitions + transientAttributeDefinitions)
+            .distinctBy { it.id }
+            .associateBy { it.id }
+        ensureQuickAttributeSelected(entity)
+        return entity
+    }
+
+    fun registerRuleDefinitions(rules: List<RuleDefinition>) {
+        availableRuleDefinitions = rules
+        syncSuggestedSystemRuleBindings()
+    }
+
+    override fun setSelectedFields(fields: Set<Field>) {
+        super.setSelectedFields(fields)
+        syncSuggestedSystemRuleBindings()
     }
 
     /**
@@ -390,11 +475,72 @@ class AddItemViewModel(
             
             _saveResult.value = true
             _errorMessage.value = "物品添加成功"
+            cacheViewModel.clearAddItemCache()
             
         } catch (e: Exception) {
             Log.e("AddItemViewModel", "保存失败", e)
             _errorMessage.value = e.message ?: "添加失败：未知错误"
             _saveResult.value = false
+        }
+    }
+
+    private fun syncSuggestedSystemRuleBindings() {
+        if (availableAttributeDefinitions.isEmpty() || availableRuleDefinitions.isEmpty()) {
+            return
+        }
+
+        val selectedFieldNames = (_selectedFields.value ?: emptySet()).map { it.name }.toSet()
+        val definitionsByKey = availableAttributeDefinitions.associateBy { it.key }
+        val currentBindings = _itemRuleBindings.value ?: emptyList()
+        val updatedBindings = currentBindings.toMutableList()
+
+        fun hasFieldContext(fieldName: String): Boolean {
+            return fieldName in selectedFieldNames || fieldValues.containsKey(fieldName)
+        }
+
+        fun ensureRuleBinding(
+            ruleId: String,
+            shouldAdd: Boolean,
+            slotAttributeKeys: Map<String, String>,
+        ) {
+            if (!shouldAdd || updatedBindings.any { it.ruleId == ruleId }) {
+                return
+            }
+            val rule = availableRuleDefinitions.firstOrNull { it.id == ruleId || it.key == ruleId } ?: return
+            updatedBindings += itemBuildBoundRuleBinding(
+                rule = rule,
+                slotAttributeDefinitionsBySlotKey = slotAttributeKeys.mapValues { (_, attributeKey) ->
+                    definitionsByKey[attributeKey]
+                },
+            )
+        }
+
+        ensureRuleBinding(
+            ruleId = "rule_system_include_total_count",
+            shouldAdd = hasFieldContext("数量"),
+            slotAttributeKeys = mapOf(
+                "quantity" to "item_quantity",
+            ),
+        )
+        ensureRuleBinding(
+            ruleId = "rule_system_include_total_price",
+            shouldAdd = hasFieldContext("单价"),
+            slotAttributeKeys = mapOf(
+                "amount" to "purchase_price",
+            ),
+        )
+        ensureRuleBinding(
+            ruleId = "rule_system_periodic_charge",
+            shouldAdd = hasFieldContext("扣费周期") || hasFieldContext("扣费日"),
+            slotAttributeKeys = mapOf(
+                "amount" to "purchase_price",
+                "billingCycle" to "item_billing_cycle",
+                "billingDay" to "item_billing_day",
+            ),
+        )
+
+        if (updatedBindings != currentBindings) {
+            super.setItemRuleBindings(updatedBindings)
         }
     }
 
@@ -448,6 +594,12 @@ class AddItemViewModel(
             is String -> rawTemplateId.toLongOrNull()
             else -> null
         }?.takeIf { it > 0 }
+        val includeTotalValueEnabled = hasActiveRuleBinding("rule_system_include_total_price")
+        val includeTotalCountEnabled = hasActiveRuleBinding("rule_system_include_total_count")
+        val periodicChargeEnabled = hasActiveRuleBinding("rule_system_periodic_charge")
+        val hasPeriodicChargeRule = hasAnyRuleBinding("rule_system_periodic_charge")
+        val subscriptionCycle = (fieldValues["扣费周期"] as? String)?.takeIf { it.isNotBlank() }
+        val billingDay = (fieldValues["扣费日"] as? String)?.takeIf { it.isNotBlank() }
         
         return UnifiedItemEntity(
             id = 0, // 新物品，ID为0
@@ -466,11 +618,11 @@ class AddItemViewModel(
             locationLatitude = locationLatitude,
             locationLongitude = locationLongitude,
             currencyCode = currencyCode,
-            excludeFromTotalValue = getBooleanFieldValue("不计入总价值"),
-            excludeFromTotalCount = getBooleanFieldValue("不计入总数量"),
-            isSubscription = getBooleanFieldValue("订阅制"),
-            autoRenew = getBooleanFieldValue("自动续费"),
-            subscriptionCycle = (fieldValues["扣费周期"] as? String)?.takeIf { it.isNotBlank() },
+            excludeFromTotalValue = !includeTotalValueEnabled,
+            excludeFromTotalCount = !includeTotalCountEnabled,
+            isSubscription = hasPeriodicChargeRule || !subscriptionCycle.isNullOrBlank() || !billingDay.isNullOrBlank(),
+            autoRenew = periodicChargeEnabled,
+            subscriptionCycle = subscriptionCycle,
             templateId = templateId,
             createdDate = createdDate,
             updatedDate = Date()
@@ -862,6 +1014,18 @@ class AddItemViewModel(
         }
     }
 
+    private fun hasAnyRuleBinding(ruleId: String): Boolean {
+        return (_itemRuleBindings.value ?: emptyList()).any { binding ->
+            binding.ruleId == ruleId
+        }
+    }
+
+    private fun hasActiveRuleBinding(ruleId: String): Boolean {
+        return (_itemRuleBindings.value ?: emptyList()).any { binding ->
+            binding.ruleId == ruleId && binding.isRuntimeActive
+        }
+    }
+
     private fun parsePeriodFieldToDays(fieldName: String): Int? {
         return when (val value = fieldValues[fieldName]) {
             is Pair<*, *> -> convertToDays(value.first?.toString()?.toIntOrNull() ?: 0, value.second?.toString().orEmpty())
@@ -1232,4 +1396,87 @@ class AddItemViewModel(
             android.util.Log.e("AddItemViewModel", "添加购物入库日历事件失败", e)
         }
     }
-} 
+
+    private fun ensureQuickAttributeSelected(definition: AttributeDefinitionEntity) {
+        val fieldName = itemCustomFieldName(definition)
+        setFieldProperties(
+            fieldName,
+            FieldProperties(
+                validationType = quickCreateValidationType(definition.valueType),
+                hint = "请输入${definition.name}",
+                unit = if (itemIsPriceAttribute(definition)) "CNY" else null,
+                unitOptions = if (itemIsPriceAttribute(definition)) itemCurrencyOptions() else null,
+                isCustomizable = false,
+            )
+        )
+        saveFieldValue(itemCustomMetaTypeFieldName(definition.id), itemAttributeTypeKey(definition))
+        if (getFieldValue(itemCustomIncludeFieldName(definition.id)) == null) {
+            saveFieldValue(itemCustomIncludeFieldName(definition.id), true)
+        }
+        val mergedDefinitions = (availableAttributeDefinitions + transientAttributeDefinitions)
+            .distinctBy { it.id }
+        val updatedFields = (_selectedFields.value ?: emptySet()).toMutableSet().apply {
+            removeAll { it.name == fieldName }
+            add(
+                itemBuildFormField(
+                    group = "补充信息",
+                    fieldName = fieldName,
+                    isSelected = true,
+                    order = 4000 + size,
+                    attributeDefinitions = mergedDefinitions,
+                )
+            )
+        }
+        setSelectedFields(updatedFields)
+    }
+
+    private fun quickCreateInputMode(valueType: AttributeValueType): AttributeInputMode {
+        return when (valueType) {
+            AttributeValueType.NUMBER -> AttributeInputMode.NUMBER_INPUT
+            AttributeValueType.DATE -> AttributeInputMode.DATE_PICKER
+            AttributeValueType.BOOLEAN -> AttributeInputMode.BOOLEAN_SWITCH
+            AttributeValueType.SELECT -> AttributeInputMode.SINGLE_SELECT
+            AttributeValueType.TEXT -> AttributeInputMode.TEXT_INPUT
+        }
+    }
+
+    private fun quickCreateValidationType(valueType: AttributeValueType): ValidationType {
+        return when (valueType) {
+            AttributeValueType.NUMBER -> ValidationType.NUMBER
+            AttributeValueType.DATE -> ValidationType.DATE
+            else -> ValidationType.TEXT
+        }
+    }
+
+    private fun quickCreateIcon(valueType: AttributeValueType): String {
+        return when (valueType) {
+            AttributeValueType.TEXT -> "text_fields"
+            AttributeValueType.NUMBER -> "straighten"
+            AttributeValueType.DATE -> "calendar_month"
+            AttributeValueType.BOOLEAN -> "toggle_on"
+            AttributeValueType.SELECT -> "checklist"
+        }
+    }
+
+    private fun AttributeDefinition.toQuickCreatedEntity(): AttributeDefinitionEntity {
+        val gson = Gson()
+        return AttributeDefinitionEntity(
+            id = id,
+            key = key,
+            name = name,
+            ownerType = ownerType,
+            valueType = valueType,
+            valueSource = valueSource,
+            interactionMode = interactionMode,
+            valuePropertiesJson = gson.toJson(valueProperties),
+            optionSource = optionSource,
+            inputMode = inputMode,
+            isMultiValue = isMultiValue,
+            optionItemsJson = gson.toJson(optionItems),
+            icon = icon,
+            templateId = templateId,
+            ruleBindingsJson = gson.toJson(ruleBindings),
+            description = description,
+        )
+    }
+}

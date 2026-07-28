@@ -16,6 +16,7 @@ import com.example.itemmanagement.data.model.attribute.RuleBinding
 import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
 import com.example.itemmanagement.data.model.attribute.RuleBindingStatus
 import com.example.itemmanagement.data.model.attribute.RuleBindingCreationSource
+import com.example.itemmanagement.data.model.attribute.RuleActivationMode
 import com.example.itemmanagement.data.model.attribute.RuleComputationType
 import com.example.itemmanagement.data.model.attribute.RuleDefinition
 import com.example.itemmanagement.data.model.attribute.RuleExpressionDefinition
@@ -29,6 +30,7 @@ import com.example.itemmanagement.data.model.attribute.RuleSlotDefinition
 import com.example.itemmanagement.data.model.attribute.RuleSlotDirection
 import com.example.itemmanagement.data.model.attribute.RuleSlotSourceType
 import com.example.itemmanagement.data.model.attribute.RuleSlotValueType
+import com.example.itemmanagement.data.model.attribute.RuleToggleUiConfig
 import com.example.itemmanagement.data.model.attribute.RuleTemplate
 import com.example.itemmanagement.data.model.attribute.RuleSystemInputDefinition
 import com.example.itemmanagement.data.model.attribute.RuleTriggerMode
@@ -52,6 +54,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.text.Collator
 import java.util.Locale
 import java.util.UUID
 
@@ -59,6 +62,7 @@ class AttributeManagementViewModel(
     private val repository: AttributeRepository,
     private val appSystemSourceRepository: AppSystemSourceRepository,
 ) : ViewModel() {
+    private val attributeNameCollator: Collator = Collator.getInstance(Locale.CHINA)
 
     private val _uiState = MutableStateFlow(AttributeManagementUiState())
     val uiState: StateFlow<AttributeManagementUiState> = _uiState.asStateFlow()
@@ -475,11 +479,6 @@ class AttributeManagementViewModel(
             return
         }
 
-        val selectedBindings = draft.ruleCandidates.filter { it.selectedEntrySlotKey.isNotBlank() }
-        if (selectedBindings.any { it.slotBindings.isEmpty() }) {
-            postMessage("已绑定的规则需要先完成槽位配置")
-            return
-        }
         val pendingCreatedAttributes = collectPendingCreatedAttributes(draft.ruleCandidates)
         val duplicatePendingName = pendingCreatedAttributes
             .groupBy { it.name.trim().lowercase(Locale.ROOT) }
@@ -546,29 +545,7 @@ class AttributeManagementViewModel(
                 interactionMode = interactionMode,
                 icon = existing?.icon ?: iconForValueType(draft.valueType, valueProperties),
                 templateId = draft.templateId,
-                ruleBindings = selectedBindings.map { candidate ->
-                    val rule = currentRules.firstOrNull { it.id == candidate.ruleId }
-                    val entrySlotKey = candidate.selectedEntrySlotKey.ifBlank {
-                        rule?.inputSlots()?.firstOrNull()?.key.orEmpty()
-                    }
-                    val slotBindings = candidate.slotBindings.mapNotNull { slotDraft ->
-                        buildRuleSlotBindingFromDraft(
-                            slotDraft = slotDraft,
-                            rule = rule,
-                            entrySlotKey = entrySlotKey,
-                            currentAttributeId = attributeId,
-                            currentAttributeKey = attributeKey,
-                            currentAttributeName = name,
-                        )
-                    }
-                    RuleBindingInstance(
-                        id = "${attributeId}_${candidate.ruleId}",
-                        ruleId = candidate.ruleId,
-                        entryAttributeId = attributeId,
-                        entrySlotKey = entrySlotKey,
-                        slotBindings = slotBindings,
-                    )
-                },
+                ruleBindings = emptyList(),
                 description = draft.description.trim().ifBlank { null },
             )
             repository.saveAttribute(attribute)
@@ -624,6 +601,23 @@ class AttributeManagementViewModel(
             postMessage("槽位“${missingSystemVariableSlot.name.ifBlank { missingSystemVariableSlot.key }}”缺少系统变量")
             return
         }
+        val toggleAnchorSlotKey = draft.toggleAnchorSlotKey.trim()
+        if (draft.activationMode == RuleActivationMode.USER_TOGGLE) {
+            if (draft.toggleLabelWhenEnabled.isBlank() || draft.toggleLabelWhenDisabled.isBlank()) {
+                postMessage("用户开关控制模式需要同时填写启用/停用文案")
+                return
+            }
+            if (
+                toggleAnchorSlotKey.isNotBlank() &&
+                inputSlots.none { slot ->
+                    slot.key == toggleAnchorSlotKey &&
+                        slot.sourceType == RuleSlotSourceType.ATTRIBUTE_INPUT
+                }
+            ) {
+                postMessage("开关锚点必须绑定到一个属性输入槽位")
+                return
+            }
+        }
         val expression = draft.expression.trim()
 
         viewModelScope.launch {
@@ -638,6 +632,17 @@ class AttributeManagementViewModel(
                 name = name,
                 computationType = draft.computationType,
                 triggerModes = triggerModes,
+                activationMode = draft.activationMode,
+                toggleUiConfig = if (draft.activationMode == RuleActivationMode.USER_TOGGLE) {
+                    RuleToggleUiConfig(
+                        labelWhenEnabled = draft.toggleLabelWhenEnabled.trim(),
+                        labelWhenDisabled = draft.toggleLabelWhenDisabled.trim(),
+                        anchorSlotKey = toggleAnchorSlotKey.ifBlank { null },
+                        defaultEnabled = draft.toggleDefaultEnabled,
+                    )
+                } else {
+                    null
+                },
                 slots = slotDefinitions,
                 expressionDefinition = expression.ifBlank { null }?.let {
                     RuleExpressionDefinition(
@@ -650,7 +655,6 @@ class AttributeManagementViewModel(
                 templateId = draft.templateId,
             )
             repository.saveRule(rule)
-            syncRuleBindingsForRule(rule)
             _uiState.value = _uiState.value.copy(routeState = AttributeManagementRouteState.List)
             postMessage(if (existing == null) "已创建规则：$name" else "已更新规则：$name")
         }
@@ -672,7 +676,6 @@ class AttributeManagementViewModel(
         attribute: AttributeDefinition? = null,
         template: AttributeTemplate? = null,
     ): AttributeEditorDraftUiModel {
-        val baseBindings = attribute?.ruleBindings ?: template?.defaultRuleBindings ?: emptyList()
         val valueType = attribute?.valueType ?: template?.defaultValueType ?: AttributeValueType.TEXT
         val valueProperties = attribute?.valueProperties
             ?: template?.defaultValueProperties
@@ -710,14 +713,14 @@ class AttributeManagementViewModel(
             } else {
                 ""
             },
-            ruleCandidates = buildRuleCandidates(baseBindings),
+            ruleCandidates = emptyList(),
             pendingCreatedAttributes = emptyList(),
             title = when {
                 attribute != null -> "编辑属性"
                 template != null -> "从模板创建属性"
                 else -> "新建属性"
             },
-            saveButtonText = if (attribute != null) "保存修改" else "保存属性",
+            saveButtonText = if (attribute != null) "保存属性定义" else "保存属性定义",
             isEditMode = attribute != null,
         )
     }
@@ -740,6 +743,19 @@ class AttributeManagementViewModel(
             triggerModes = rule?.let(::resolveEffectiveRuleTriggerModes)
                 ?: template?.triggerModes
                 ?: listOf(RuleTriggerMode.ON_VALUE_CHANGED),
+            activationMode = rule?.activationMode ?: template?.activationMode ?: RuleActivationMode.ALWAYS_ON,
+            toggleLabelWhenEnabled = rule?.toggleUiConfig?.labelWhenEnabled
+                ?: template?.toggleUiConfig?.labelWhenEnabled
+                .orEmpty(),
+            toggleLabelWhenDisabled = rule?.toggleUiConfig?.labelWhenDisabled
+                ?: template?.toggleUiConfig?.labelWhenDisabled
+                .orEmpty(),
+            toggleAnchorSlotKey = rule?.toggleUiConfig?.anchorSlotKey
+                ?: template?.toggleUiConfig?.anchorSlotKey
+                .orEmpty(),
+            toggleDefaultEnabled = rule?.toggleUiConfig?.defaultEnabled
+                ?: template?.toggleUiConfig?.defaultEnabled
+                ?: true,
             slots = if (baseSlots.isEmpty()) {
                 listOf(
                     newRuleSlotDraft(RuleSlotDirection.INPUT),
@@ -911,6 +927,8 @@ class AttributeManagementViewModel(
             name = template?.name.orEmpty(),
             computationType = template?.computationType ?: RuleComputationType.CUSTOM,
             triggerModes = template?.triggerModes ?: listOf(RuleTriggerMode.ON_VALUE_CHANGED),
+            activationMode = template?.activationMode ?: RuleActivationMode.ALWAYS_ON,
+            toggleUiConfig = template?.toggleUiConfig,
             slots = template?.slots ?: emptyList(),
             expressionDefinition = template?.defaultExpressionDefinition,
             outputStrategies = template?.outputStrategies ?: emptyList(),
@@ -1555,7 +1573,11 @@ class AttributeManagementViewModel(
         filters: AttributeListFilters,
     ): AttributeListPaneState {
         val catalogEntries = currentAttributes.map { mapToCatalogEntry(it) }
-        val filtered = catalogEntries.filter { entry -> entry.matches(filters, searchQuery) }
+        val filtered = catalogEntries
+            .filter { entry -> entry.matches(filters, searchQuery) }
+            .sortedWith { left, right ->
+                attributeNameCollator.compare(left.name, right.name)
+            }
         val contentState = when {
             filtered.isNotEmpty() -> ListContentState.Data
             searchQuery.isNotBlank() -> ListContentState.SearchEmpty
@@ -1796,6 +1818,7 @@ class AttributeManagementViewModel(
             id = def.id,
             name = def.name,
             icon = def.icon ?: "sell",
+            description = def.description,
             sourceLabel = if (def.ownerType == AttributeOwnerType.SYSTEM) "系统属性" else "自定义属性",
             templateName = repository.systemAttributeTemplates.firstOrNull { it.id == def.templateId }?.name ?: "无",
             usageCountText = "当前被 0 个物品使用",

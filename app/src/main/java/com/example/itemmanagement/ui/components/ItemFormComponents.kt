@@ -131,6 +131,7 @@ val ITEM_BASE_OPTIONAL_FIELDS: Set<String> = setOf("品牌", "规格")
 val ITEM_DEFAULT_SUPPLEMENT_FIELDS: Set<String> = emptySet()
 
 private val LEGACY_BOUND_ATTRIBUTE_FIELD_BY_KEY = mapOf(
+    "item_quantity" to "数量",
     "purchase_price" to "单价",
     "purchase_date" to "购买日期",
     "item_status" to "状态",
@@ -150,9 +151,8 @@ private val LEGACY_BOUND_ATTRIBUTE_FIELD_BY_KEY = mapOf(
     "item_expiration_date" to "保质过期时间",
     "item_warranty_period" to "保修期",
     "item_warranty_expiry" to "保修到期时间",
-    "item_subscription_flag" to "订阅制",
-    "item_auto_renew" to "自动续费",
     "item_billing_cycle" to "扣费周期",
+    "item_billing_day" to "扣费日",
     "item_open_status" to "开封状态",
     "item_season" to "季节",
 )
@@ -500,13 +500,6 @@ fun ItemQuantityRow(
             }
         }
 
-        if (showExcludeFromTotalCountAction) {
-            ItemAttributeActionRow(
-                title = "不计入物品总数量",
-                checked = excludeFromTotalCount,
-                onCheckedChange = onExcludeFromTotalCountChange
-            )
-        }
     }
 }
 
@@ -1361,23 +1354,45 @@ fun ItemSupplementFieldItem(
     fieldName: String,
     viewModel: BaseItemViewModel,
     customAttributeDefinitions: List<AttributeDefinitionEntity>,
+    itemRuleBindings: List<RuleBindingInstance> = emptyList(),
+    ruleDefinitions: List<RuleDefinition> = emptyList(),
     readonlyDerivedFieldNames: Set<String> = emptySet(),
     locked: Boolean = false,
     onDelete: () -> Unit
 ) {
+    val anchoredToggleStates = remember(fieldName, itemRuleBindings, ruleDefinitions, customAttributeDefinitions) {
+        itemResolveAttributeToggleStates(
+            fieldName = fieldName,
+            itemRuleBindings = itemRuleBindings,
+            ruleDefinitions = ruleDefinitions,
+            allDefinitions = customAttributeDefinitions,
+        )
+    }
     val content: @Composable () -> Unit = {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.10f)
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 ItemRenderSupplementField(
                     fieldName = fieldName,
                     viewModel = viewModel,
                     customAttributeDefinitions = customAttributeDefinitions,
                     readonlyDerivedFieldNames = readonlyDerivedFieldNames,
                 )
+                anchoredToggleStates.forEach { toggleState ->
+                    ItemAttributeActionRow(
+                        title = toggleState.label.ifBlank { toggleState.ruleName },
+                        checked = toggleState.binding.isEnabled,
+                        onCheckedChange = { enabled ->
+                            viewModel.addOrUpdateItemRuleBinding(toggleState.binding.copy(isEnabled = enabled))
+                        }
+                    )
+                }
             }
         }
     }
@@ -1441,10 +1456,7 @@ fun ItemRenderSupplementField(
             onCurrencyChange = {
                 viewModel.saveFieldValue("币种", it)
                 viewModel.saveFieldValue("单价_unit", it)
-            },
-            actionTitle = "不计入总价值",
-            actionChecked = itemBooleanValue(viewModel.getFieldValue("不计入总价值")),
-            onActionCheckedChange = { viewModel.saveFieldValue("不计入总价值", it) }
+            }
         )
         "总价" -> ItemPriceField(
             label = "总价",
@@ -1515,22 +1527,20 @@ fun ItemRenderSupplementField(
             onValueChange = { viewModel.saveFieldValue(fieldName, it) },
             onUnitChange = { viewModel.saveFieldValue("${fieldName}_unit", it) }
         )
-        "订阅制" -> ItemFunctionSwitchRow(
-            title = "订阅制",
-            checked = itemBooleanValue(viewModel.getFieldValue("订阅制")),
-            onCheckedChange = { viewModel.saveFieldValue("订阅制", it) }
-        )
-        "自动续费" -> ItemFunctionSwitchRow(
-            title = "自动续费",
-            checked = itemBooleanValue(viewModel.getFieldValue("自动续费")),
-            onCheckedChange = { viewModel.saveFieldValue("自动续费", it) }
-        )
         "扣费周期" -> ItemSegmentedChoiceField(
             label = "扣费周期",
             value = itemStringValue(viewModel.getFieldValue("扣费周期")).ifBlank { "MONTH" },
             options = listOf("DAY", "MONTH", "QUARTER", "YEAR"),
             optionLabels = mapOf("DAY" to "日", "MONTH" to "月", "QUARTER" to "季度", "YEAR" to "年"),
             onValueChange = { viewModel.saveFieldValue("扣费周期", it) }
+        )
+        "扣费日" -> ItemTextValueField(
+            label = "扣费日",
+            value = itemStringValue(viewModel.getFieldValue("扣费日")),
+            hint = "请输入扣费日",
+            onValueChange = { input ->
+                viewModel.saveFieldValue("扣费日", input.filter { ch -> ch.isDigit() })
+            }
         )
         "开封状态" -> ItemSegmentedChoiceField(
             label = "开封状态",
@@ -1601,40 +1611,6 @@ fun ItemFunctionFieldItem(
         return
     }
 
-    when (fieldName) {
-        "订阅制" -> SwipeRevealDeleteContainer(onDeleteClick = onDelete) {
-            ItemFunctionSwitchRow(
-                title = "订阅制",
-                checked = itemBooleanValue(viewModel.getFieldValue("订阅制")),
-                onCheckedChange = { viewModel.saveFieldValue("订阅制", it) }
-            )
-        }
-        "自动续费" -> SwipeRevealDeleteContainer(onDeleteClick = onDelete) {
-            ItemFunctionSwitchRow(
-                title = "自动续费",
-                checked = itemBooleanValue(viewModel.getFieldValue("自动续费")),
-                onCheckedChange = { viewModel.saveFieldValue("自动续费", it) }
-            )
-        }
-        "扣费周期" -> SwipeRevealDeleteContainer(onDeleteClick = onDelete) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.10f)
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("扣费周期", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    ItemSegmentedChoiceField(
-                        label = "",
-                        value = itemStringValue(viewModel.getFieldValue("扣费周期")).ifBlank { "MONTH" },
-                        options = listOf("DAY", "MONTH", "QUARTER", "YEAR"),
-                        optionLabels = mapOf("DAY" to "日", "MONTH" to "月", "QUARTER" to "季度", "YEAR" to "年"),
-                        onValueChange = { viewModel.saveFieldValue("扣费周期", it) }
-                    )
-                }
-            }
-        }
-    }
 }
 
 data class ItemReadonlyRuleOutputState(
@@ -2209,13 +2185,6 @@ fun ItemCustomAttributeField(
                     if (itemStringValue(viewModel.getFieldValue("币种")).isBlank()) {
                         viewModel.saveFieldValue("币种", it)
                     }
-                },
-                actionTitle = if (showFunctionControl) "不计入总价" else null,
-                actionChecked = !itemBooleanValue(viewModel.getFieldValue(includeKey)),
-                onActionCheckedChange = if (showFunctionControl) {
-                    { checked -> viewModel.saveFieldValue(includeKey, !checked) }
-                } else {
-                    null
                 }
             )
         }
@@ -2406,7 +2375,13 @@ fun itemBuildSupplementFields(
     return buildList {
         addAll(defaultFields)
         addAll(optionalFields.filter { selectedFieldNames.contains(it) })
-        addAll(customAttributeDefinitions.map { itemCustomFieldName(it) }.filter { selectedFieldNames.contains(it) })
+        addAll(
+            customAttributeDefinitions
+                .map { definition -> itemCustomFieldName(definition) }
+                .filter { fieldName ->
+                    selectedFieldNames.contains(fieldName) && !itemIsBaseIntrinsicField(fieldName)
+                }
+        )
     }
 }
 
@@ -2702,7 +2677,6 @@ fun itemDisplayNameForField(
         definition != null && fieldName == itemCustomIncludeFieldName(definition) -> "${definition.name}计入全局总价值"
         definition != null -> definition.name
         fieldName == "单价" -> "购入价格"
-        fieldName == "不计入总数量" -> "不计入物品总数量"
         else -> fieldName
     }
 }

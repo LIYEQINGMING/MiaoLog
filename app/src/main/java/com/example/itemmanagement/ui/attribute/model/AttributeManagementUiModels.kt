@@ -5,6 +5,7 @@ import com.example.itemmanagement.data.model.attribute.AttributeNumberFormat
 import com.example.itemmanagement.data.model.attribute.AttributeValueSource
 import com.example.itemmanagement.data.model.attribute.AttributeValueType
 import com.example.itemmanagement.data.model.attribute.RuleComputationType
+import com.example.itemmanagement.data.model.attribute.RuleActivationMode
 import com.example.itemmanagement.data.model.attribute.RuleOutputTargetType
 import com.example.itemmanagement.data.model.attribute.RuleOutputUpdateMode
 import com.example.itemmanagement.data.model.attribute.RuleSlotDirection
@@ -215,6 +216,7 @@ data class AttributeDetailUiModel(
     val id: String,
     val name: String,
     val icon: String,
+    val description: String?,
     val sourceLabel: String,
     val templateName: String?,
     val usageCountText: String,
@@ -419,7 +421,7 @@ data class AttributeEditorDraftUiModel(
     val ruleCandidates: List<RuleBindingCandidateUiModel> = emptyList(),
     val pendingCreatedAttributes: List<PendingCreatedAttributeUiModel> = emptyList(),
     val title: String = "新建属性",
-    val saveButtonText: String = "保存属性",
+    val saveButtonText: String = "保存属性定义",
     val isEditMode: Boolean = false,
 )
 
@@ -433,6 +435,11 @@ data class RuleEditorDraftUiModel(
     val triggerModes: List<com.example.itemmanagement.data.model.attribute.RuleTriggerMode> = listOf(
         com.example.itemmanagement.data.model.attribute.RuleTriggerMode.ON_VALUE_CHANGED
     ),
+    val activationMode: RuleActivationMode = RuleActivationMode.ALWAYS_ON,
+    val toggleLabelWhenEnabled: String = "",
+    val toggleLabelWhenDisabled: String = "",
+    val toggleAnchorSlotKey: String = "",
+    val toggleDefaultEnabled: Boolean = true,
     val slots: List<RuleSlotDraftUiModel> = emptyList(),
     val systemVariableOptions: List<SystemVariableOptionUiModel> = emptyList(),
     val expression: String = "",

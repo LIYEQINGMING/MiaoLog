@@ -53,6 +53,8 @@ data class RuleBindingInstance(
     val entryAttributeId: String? = null,
     val entrySlotKey: String,
     val slotBindings: List<RuleSlotBinding>,
+    val togglePlacementSlotKey: String? = null,
+    val isEnabled: Boolean = true,
     val status: RuleBindingStatus = RuleBindingStatus.ACTIVE,
     val creationSource: RuleBindingCreationSource = RuleBindingCreationSource.ATTRIBUTE_MANAGEMENT,
     val description: String? = null,
@@ -80,6 +82,9 @@ data class RuleBindingInstance(
                     it is RuleSlotBinding.SystemOutput
             }
             .map { it.slotKey }
+
+    val isRuntimeActive: Boolean
+        get() = isEnabled && status == RuleBindingStatus.ACTIVE
 }
 
 typealias RuleBinding = RuleBindingInstance

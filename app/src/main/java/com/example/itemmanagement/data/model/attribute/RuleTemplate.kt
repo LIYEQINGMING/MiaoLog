@@ -8,6 +8,8 @@ data class RuleTemplate(
     val kind: TemplateKind = TemplateKind.RULE,
     val computationType: RuleComputationType,
     val triggerModes: List<RuleTriggerMode> = listOf(RuleTriggerMode.ON_VALUE_CHANGED),
+    val activationMode: RuleActivationMode = RuleActivationMode.ALWAYS_ON,
+    val toggleUiConfig: RuleToggleUiConfig? = null,
     val slots: List<RuleSlotDefinition>,
     val defaultExpressionDefinition: RuleExpressionDefinition? = null,
     val outputStrategies: List<RuleOutputStrategyDefinition> = emptyList(),

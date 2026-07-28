@@ -72,7 +72,7 @@ class AddItemFragment : Fragment() {
 
     private val viewModel: AddItemViewModel by viewModels {
         val app = (requireActivity().application as ItemManagementApplication)
-        AddItemViewModelFactory(app.repository, cacheViewModel, app.warrantyRepository)
+        AddItemViewModelFactory(app.repository, cacheViewModel, app.attributeRepository, app.warrantyRepository)
     }
 
     private var currentTemplateId: Long = -1L
@@ -236,6 +236,7 @@ class AddItemFragment : Fragment() {
                 launch {
                     app.attributeRepository.getAllRules().collect { rules ->
                         ruleDefinitions = rules
+                        viewModel.registerRuleDefinitions(rules)
                     }
                 }
             }
@@ -442,6 +443,7 @@ class AddItemFragment : Fragment() {
                       customAttributeDefinitions = allDefinitions
                       ruleDefinitions = rules
                       viewModel.registerAttributeDefinitions(allDefinitions)
+                      viewModel.registerRuleDefinitions(rules)
 
                     val fields = mutableSetOf<Field>()
                     ITEM_BASE_REQUIRED_FIELDS.forEach { fieldName ->
@@ -526,6 +528,7 @@ class AddItemFragment : Fragment() {
                   customAttributeDefinitions = definitions
                   ruleDefinitions = rules
                   viewModel.registerAttributeDefinitions(definitions)
+                  viewModel.registerRuleDefinitions(rules)
               }
           }
       }
@@ -595,10 +598,14 @@ class AddItemFragment : Fragment() {
         currentTemplateId = template.id
         currentTemplate = template
           viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+              val app = requireActivity().application as ItemManagementApplication
+              val rules = app.attributeRepository.getAllRules().first()
               val definitions = loadAllAttributeDefinitions(AppDatabase.getDatabase(requireContext()))
               withContext(Dispatchers.Main) {
                   customAttributeDefinitions = definitions
+                  ruleDefinitions = rules
                   viewModel.registerAttributeDefinitions(definitions)
+                  viewModel.registerRuleDefinitions(rules)
                   definitions.forEach { definition ->
                       viewModel.saveFieldValue(itemCustomMetaTypeFieldName(definition.id), itemAttributeTypeKey(definition))
                   }
@@ -646,9 +653,8 @@ class AddItemFragment : Fragment() {
             "名称", "分类", "数量", "品牌", "规格" -> "基础信息"
             "状态", "标签", "单价", "总价", "币种", "购买日期", "购买渠道", "商家名称",
             "备注", "位置", "地点", "序列号", "容量", "评分", "生产日期", "保质期",
-            "保质过期时间", "保修期", "保修到期时间", "订阅制", "自动续费", "扣费周期",
+            "保质过期时间", "保修期", "保修到期时间", "扣费周期", "扣费日",
             "开封状态", "季节" -> "补充信息"
-            "不计入总价值", "不计入总数量" -> "补充信息"
             else -> "补充信息"
         }
     }

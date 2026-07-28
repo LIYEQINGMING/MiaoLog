@@ -39,6 +39,8 @@ data class RuleDefinition(
     val name: String,
     val computationType: RuleComputationType,
     val triggerModes: List<RuleTriggerMode> = listOf(RuleTriggerMode.ON_VALUE_CHANGED),
+    val activationMode: RuleActivationMode = RuleActivationMode.ALWAYS_ON,
+    val toggleUiConfig: RuleToggleUiConfig? = null,
     val slots: List<RuleSlotDefinition>,
     val expressionDefinition: RuleExpressionDefinition? = null,
     val outputStrategies: List<RuleOutputStrategyDefinition> = emptyList(),

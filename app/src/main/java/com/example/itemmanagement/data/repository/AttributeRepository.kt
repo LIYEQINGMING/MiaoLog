@@ -25,6 +25,11 @@ class AttributeRepository(
         val outputKeys: List<String> = emptyList(),
     )
 
+    private val deprecatedSystemAttributeIds = setOf(
+        "attr_system_subscription_flag",
+        "attr_system_auto_renew",
+    )
+
     val itemSystemAttributes: List<AttributeDefinition> = listOf(
         AttributeDefinition(
             id = "attr_system_purchase_price",
@@ -89,6 +94,27 @@ class AttributeRepository(
                 )
             ),
             description = "物品补充信息中的购入价格系统属性"
+        ),
+        AttributeDefinition(
+            id = "attr_system_quantity",
+            key = "item_quantity",
+            name = "数量",
+            ownerType = AttributeOwnerType.SYSTEM,
+            valueType = AttributeValueType.NUMBER,
+            valueProperties = AttributeValueProperties(
+                numberFormat = AttributeNumberFormat.WITH_UNIT,
+                unitCategory = "数量",
+                defaultUnit = "个",
+                allowedUnits = listOf("个", "件", "包", "盒", "瓶", "袋", "箱"),
+                allowUnitSwitch = true,
+                decimalPlaces = 0,
+                allowNegative = false,
+            ),
+            valueSource = AttributeValueSource.INPUT,
+            interactionMode = AttributeInputMode.NUMBER_INPUT,
+            icon = "inventory_2",
+            templateId = "template_attr_text",
+            description = "物品数量系统属性"
         ),
         AttributeDefinition(
             id = "attr_system_purchase_date",
@@ -338,32 +364,6 @@ class AttributeRepository(
             description = "保修到期时间"
         ),
         AttributeDefinition(
-            id = "attr_system_subscription_flag",
-            key = "item_subscription_flag",
-            name = "订阅制",
-            ownerType = AttributeOwnerType.SYSTEM,
-            valueType = AttributeValueType.BOOLEAN,
-            optionSource = AttributeOptionSource.INPUT,
-            inputMode = AttributeInputMode.BOOLEAN_SWITCH,
-            isMultiValue = false,
-            icon = "autorenew",
-            templateId = "template_attr_text",
-            description = "是否订阅制"
-        ),
-        AttributeDefinition(
-            id = "attr_system_auto_renew",
-            key = "item_auto_renew",
-            name = "自动续费",
-            ownerType = AttributeOwnerType.SYSTEM,
-            valueType = AttributeValueType.BOOLEAN,
-            optionSource = AttributeOptionSource.INPUT,
-            inputMode = AttributeInputMode.BOOLEAN_SWITCH,
-            isMultiValue = false,
-            icon = "sync",
-            templateId = "template_attr_text",
-            description = "是否自动续费"
-        ),
-        AttributeDefinition(
             id = "attr_system_billing_cycle",
             key = "item_billing_cycle",
             name = "扣费周期",
@@ -380,6 +380,23 @@ class AttributeRepository(
             icon = "repeat",
             templateId = "template_attr_fixed_option",
             description = "扣费周期"
+        ),
+        AttributeDefinition(
+            id = "attr_system_billing_day",
+            key = "item_billing_day",
+            name = "扣费日",
+            ownerType = AttributeOwnerType.SYSTEM,
+            valueType = AttributeValueType.NUMBER,
+            valueProperties = AttributeValueProperties(
+                numberFormat = AttributeNumberFormat.PLAIN,
+                decimalPlaces = 0,
+                allowNegative = false,
+            ),
+            valueSource = AttributeValueSource.INPUT,
+            interactionMode = AttributeInputMode.NUMBER_INPUT,
+            icon = "calendar_month",
+            templateId = "template_attr_text",
+            description = "周期扣费在月内触发的日期或日偏移"
         ),
         AttributeDefinition(
             id = "attr_system_open_status",
@@ -576,6 +593,13 @@ class AttributeRepository(
             category = "ACCUMULATION",
             computationType = RuleComputationType.ACCUMULATION,
             triggerModes = listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE),
+            activationMode = RuleActivationMode.USER_TOGGLE,
+            toggleUiConfig = RuleToggleUiConfig(
+                labelWhenEnabled = "计入总价值",
+                labelWhenDisabled = "不计入总价值",
+                anchorSlotKey = "amount",
+                defaultEnabled = true,
+            ),
             slots = listOf(
                 RuleSlotDefinition(
                     key = "amount",
@@ -604,7 +628,116 @@ class AttributeRepository(
                     systemVariableKey = SystemVariableKey.GLOBAL_TOTAL_VALUE,
                 )
             ),
-            description = "适合将金额字段纳入总价统计"
+            description = "金额字段纳入总价值统计"
+        ),
+        RuleTemplate(
+            id = "template_rule_include_total_count",
+            key = "rule_system_include_total_count",
+            name = "计入总数量规则模板",
+            category = "ACCUMULATION",
+            computationType = RuleComputationType.ACCUMULATION,
+            triggerModes = listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE),
+            activationMode = RuleActivationMode.USER_TOGGLE,
+            toggleUiConfig = RuleToggleUiConfig(
+                labelWhenEnabled = "计入总数量",
+                labelWhenDisabled = "不计入总数量",
+                anchorSlotKey = "quantity",
+                defaultEnabled = true,
+            ),
+            slots = listOf(
+                RuleSlotDefinition(
+                    key = "quantity",
+                    name = "数量",
+                    direction = RuleSlotDirection.INPUT,
+                    valueType = RuleSlotValueType.NUMBER,
+                    sourceType = RuleSlotSourceType.ATTRIBUTE_INPUT,
+                ),
+                RuleSlotDefinition(
+                    key = "计入总数量",
+                    name = "计入总数量",
+                    direction = RuleSlotDirection.OUTPUT,
+                    valueType = RuleSlotValueType.NUMBER,
+                    sourceType = RuleSlotSourceType.SYSTEM_OUTPUT,
+                    systemVariableKey = SystemVariableKey.GLOBAL_TOTAL_COUNT,
+                ),
+            ),
+            defaultExpressionDefinition = RuleExpressionDefinition(
+                expression = "quantity",
+                referencedSlotKeys = listOf("quantity"),
+            ),
+            outputStrategies = listOf(
+                RuleOutputStrategyDefinition(
+                    slotKey = "计入总数量",
+                    targetType = RuleOutputTargetType.SYSTEM_VARIABLE,
+                    systemVariableKey = SystemVariableKey.GLOBAL_TOTAL_COUNT,
+                )
+            ),
+            description = "数量字段纳入总数量统计"
+        ),
+        RuleTemplate(
+            id = "template_rule_periodic_charge",
+            key = "rule_system_periodic_charge",
+            name = "周期扣费规则模板",
+            category = "CYCLE",
+            computationType = RuleComputationType.CYCLE,
+            triggerModes = listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE),
+            activationMode = RuleActivationMode.USER_TOGGLE,
+            toggleUiConfig = RuleToggleUiConfig(
+                labelWhenEnabled = "自动续费",
+                labelWhenDisabled = "暂停续费",
+                anchorSlotKey = "amount",
+                defaultEnabled = true,
+            ),
+            slots = listOf(
+                RuleSlotDefinition(
+                    key = "amount",
+                    name = "购入价格",
+                    direction = RuleSlotDirection.INPUT,
+                    valueType = RuleSlotValueType.NUMBER,
+                    sourceType = RuleSlotSourceType.ATTRIBUTE_INPUT,
+                ),
+                RuleSlotDefinition(
+                    key = "billingCycle",
+                    name = "扣费周期",
+                    direction = RuleSlotDirection.INPUT,
+                    valueType = RuleSlotValueType.CYCLE_UNIT,
+                    sourceType = RuleSlotSourceType.ATTRIBUTE_INPUT,
+                ),
+                RuleSlotDefinition(
+                    key = "billingDay",
+                    name = "扣费日",
+                    direction = RuleSlotDirection.INPUT,
+                    valueType = RuleSlotValueType.NUMBER,
+                    sourceType = RuleSlotSourceType.ATTRIBUTE_INPUT,
+                ),
+                RuleSlotDefinition(
+                    key = "currentDate",
+                    name = "当前日期",
+                    direction = RuleSlotDirection.INPUT,
+                    valueType = RuleSlotValueType.SYSTEM_DATE_TIME,
+                    sourceType = RuleSlotSourceType.SYSTEM_INPUT,
+                    systemVariableKey = SystemVariableKey.CURRENT_DATE,
+                    isRequired = false,
+                ),
+                RuleSlotDefinition(
+                    key = "周期扣费金额",
+                    name = "周期扣费金额",
+                    direction = RuleSlotDirection.OUTPUT,
+                    valueType = RuleSlotValueType.NUMBER,
+                    sourceType = RuleSlotSourceType.READONLY_OUTPUT,
+                ),
+            ),
+            defaultExpressionDefinition = RuleExpressionDefinition(
+                expression = "amount",
+                referencedSlotKeys = listOf("amount", "billingCycle", "billingDay", "currentDate"),
+            ),
+            outputStrategies = listOf(
+                RuleOutputStrategyDefinition(
+                    slotKey = "周期扣费金额",
+                    targetType = RuleOutputTargetType.READONLY_RESULT,
+                )
+            ),
+            description = "第一阶段先承接周期扣费关系与启停控制，后续再补完整日期推导与调度"
         ),
         RuleTemplate(
             id = "template_rule_remaining_payment",
@@ -790,6 +923,9 @@ class AttributeRepository(
     }
 
     suspend fun ensureItemSystemAttributes() {
+        deprecatedSystemAttributeIds.forEach { deprecatedId ->
+            attributeDefinitionDao.getDefinitionById(deprecatedId)?.let { attributeDefinitionDao.delete(it) }
+        }
         val existingIds = attributeDefinitionDao.getAllDefinitions().first().map { it.id }.toSet()
         itemSystemAttributes
             .filterNot { it.id in existingIds }
@@ -806,9 +942,7 @@ class AttributeRepository(
     }
 
     suspend fun ensureSystemRules() {
-        val existingIds = ruleDefinitionDao.getAllDefinitions().first().map { it.id }.toSet()
         buildSystemRuleDefinitions()
-            .filterNot { it.id in existingIds }
             .forEach { saveRule(it) }
     }
 
@@ -841,6 +975,8 @@ class AttributeRepository(
                 name = template.name.removeSuffix("规则模板").removeSuffix("模板"),
                 computationType = template.computationType,
                 triggerModes = template.triggerModes,
+                activationMode = template.activationMode,
+                toggleUiConfig = template.toggleUiConfig,
                 slots = template.slots,
                 expressionDefinition = template.defaultExpressionDefinition,
                 outputStrategies = template.outputStrategies,
@@ -975,11 +1111,19 @@ class AttributeRepository(
         val typeOutputTargetList = object : TypeToken<List<RuleOutputTargetDefinition>>() {}.type
         val typeSlotList = object : TypeToken<List<RuleSlotDefinition>>() {}.type
         val typeOutputStrategyList = object : TypeToken<List<RuleOutputStrategyDefinition>>() {}.type
+        val typeToggleUiConfig = object : TypeToken<RuleToggleUiConfig>() {}.type
         val parsedTriggerModes = try {
             gson.fromJson<List<RuleTriggerMode>>(triggerModesJson, typeTriggerModeList) ?: emptyList<RuleTriggerMode>()
         } catch (e: Exception) {
             emptyList()
         }.ifEmpty { listOf(RuleTriggerMode.ON_VALUE_CHANGED) }
+        val parsedToggleUiConfig = try {
+            toggleUiJson?.takeIf { it.isNotBlank() }?.let {
+                gson.fromJson<RuleToggleUiConfig>(it, typeToggleUiConfig)
+            }
+        } catch (e: Exception) {
+            null
+        }
         val parsedSlots = try {
             gson.fromJson<List<RuleSlotDefinition>>(inputRolesJson, typeSlotList) ?: emptyList<RuleSlotDefinition>()
         } catch (e: Exception) {
@@ -999,6 +1143,8 @@ class AttributeRepository(
                 name = name,
                 computationType = computationType,
                 triggerModes = parsedTriggerModes,
+                activationMode = activationMode,
+                toggleUiConfig = parsedToggleUiConfig,
                 slots = parsedSlots,
                 expressionDefinition = expression?.takeIf { it.isNotBlank() }?.let {
                     RuleExpressionDefinition(expression = it)
@@ -1073,6 +1219,8 @@ class AttributeRepository(
             name = name,
             computationType = computationType,
             triggerModes = parsedTriggerModes,
+            activationMode = activationMode,
+            toggleUiConfig = parsedToggleUiConfig,
             slots = legacySlots,
             expressionDefinition = expression?.takeIf { it.isNotBlank() }?.let {
                 RuleExpressionDefinition(expression = it, referencedSlotKeys = inputRoles + outputKeys)
@@ -1089,6 +1237,8 @@ class AttributeRepository(
             name = name,
             computationType = computationType,
             triggerModesJson = gson.toJson(triggerModes),
+            activationMode = activationMode,
+            toggleUiJson = toggleUiConfig?.let(gson::toJson),
             inputRolesJson = gson.toJson(slots),
             requiredDependenciesJson = gson.toJson(outputStrategies),
             optionalDependenciesJson = gson.toJson(emptyList<String>()),
@@ -1102,7 +1252,7 @@ class AttributeRepository(
 
     private fun normalizeAttributeDefinition(attribute: AttributeDefinition): AttributeDefinition {
         return attribute.copy(
-            ruleBindings = attribute.ruleBindings.map(::normalizeRuleBinding),
+            ruleBindings = emptyList(),
         )
     }
 
@@ -1119,6 +1269,10 @@ class AttributeRepository(
 
     private fun normalizeRuleDefinition(rule: RuleDefinition): RuleDefinition {
         return rule.copy(
+            toggleUiConfig = when (rule.activationMode) {
+                RuleActivationMode.ALWAYS_ON -> null
+                RuleActivationMode.USER_TOGGLE -> rule.toggleUiConfig ?: RuleToggleUiConfig()
+            },
             slots = rule.slots.map(::normalizeRuleSlotDefinition),
         )
     }

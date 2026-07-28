@@ -2,6 +2,8 @@ package com.example.itemmanagement.ui.base
 
 import android.net.Uri
 import androidx.lifecycle.*
+import com.example.itemmanagement.data.entity.attribute.AttributeDefinitionEntity
+import com.example.itemmanagement.data.model.attribute.AttributeValueType
 import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
 import com.example.itemmanagement.data.model.attribute.SystemVariableKey
 import com.example.itemmanagement.data.repository.UnifiedItemRepository
@@ -307,6 +309,17 @@ abstract class BaseItemViewModel(
             saveToCache()
         }
         return changed
+    }
+
+    open fun getTransientAttributeDefinitions(): List<AttributeDefinitionEntity> {
+        return emptyList()
+    }
+
+    open suspend fun createQuickAttribute(
+        name: String,
+        valueType: AttributeValueType,
+    ): AttributeDefinitionEntity? {
+        return null
     }
 
     /**
