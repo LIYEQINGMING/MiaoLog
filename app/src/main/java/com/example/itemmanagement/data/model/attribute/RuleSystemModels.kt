@@ -105,11 +105,51 @@ enum class RuleTriggerMode {
     ON_FORM_OPENED,
     ON_SAVE,
     ON_SYSTEM_INPUT_CHANGED,
+    SCHEDULED,
 }
 
 enum class RuleActivationMode {
     ALWAYS_ON,
     USER_TOGGLE,
+}
+
+enum class RuleScheduleTimeSourceType {
+    FIXED,
+    SLOT,
+}
+
+enum class RuleScheduleSourceMode {
+    MANUAL_CALENDAR_RULE,
+    SLOT_DRIVEN,
+}
+
+enum class RuleScheduleFrequency {
+    DAILY,
+    WEEKLY,
+    MONTHLY,
+    YEARLY,
+    CUSTOM,
+}
+
+enum class RuleScheduleEndType {
+    NEVER,
+    UNTIL_DATE,
+    OCCURRENCE_COUNT,
+}
+
+enum class RuleScheduleWeekday {
+    MONDAY,
+    TUESDAY,
+    WEDNESDAY,
+    THURSDAY,
+    FRIDAY,
+    SATURDAY,
+    SUNDAY,
+}
+
+enum class RuleScheduleMonthlyPatternType {
+    DAY_OF_MONTH,
+    NTH_WEEKDAY,
 }
 
 enum class RuleBindingStatus {
@@ -152,6 +192,85 @@ data class RuleToggleUiConfig(
     val anchorSlotKey: String? = null,
     val defaultEnabled: Boolean = true,
 )
+
+data class RuleScheduleConfig(
+    val sourceType: RuleScheduleTimeSourceType = RuleScheduleTimeSourceType.FIXED,
+    val sourceMode: RuleScheduleSourceMode? = null,
+    val fixedValue: String? = null,
+    val slotKeys: List<String> = emptyList(),
+    val description: String? = null,
+    val manualRule: RuleManualScheduleRule? = null,
+    val slotDrivenConfig: RuleSlotDrivenScheduleConfig? = null,
+)
+
+data class RuleScheduleEventConfig(
+    val generateCalendarEvent: Boolean = false,
+    val eventTitleTemplate: String = "",
+    val eventDateSlotKey: String? = null,
+    val dedupeKeyStrategy: String? = null,
+)
+
+data class RuleRuntimeState(
+    val lastExecutedAt: Long? = null,
+    val nextRunAt: Long? = null,
+    val lastGeneratedEventAt: Long? = null,
+    val lastExecutionFingerprint: String? = null,
+)
+
+data class RuleManualScheduleRule(
+    val startAtMillis: Long? = null,
+    val isAllDay: Boolean = true,
+    val timezoneId: String? = null,
+    val frequency: RuleScheduleFrequency = RuleScheduleFrequency.MONTHLY,
+    val interval: Int = 1,
+    val byWeekdays: List<RuleScheduleWeekday> = emptyList(),
+    val dayOfMonth: Int? = null,
+    val monthlyPatternType: RuleScheduleMonthlyPatternType? = null,
+    val monthlyWeekOrdinal: Int? = null,
+    val monthlyWeekday: RuleScheduleWeekday? = null,
+    val endType: RuleScheduleEndType = RuleScheduleEndType.NEVER,
+    val untilMillis: Long? = null,
+    val occurrenceCount: Int? = null,
+    val customRRule: String? = null,
+)
+
+data class RuleSlotDrivenScheduleConfig(
+    val startAtSlotKey: String? = null,
+    val frequencySlotKey: String? = null,
+    val intervalSlotKey: String? = null,
+    val weekdaysSlotKey: String? = null,
+    val dayOfMonthSlotKey: String? = null,
+    val monthlyWeekOrdinalSlotKey: String? = null,
+    val monthlyWeekdaySlotKey: String? = null,
+    val endAtSlotKey: String? = null,
+    val occurrenceCountSlotKey: String? = null,
+    val timezoneSlotKey: String? = null,
+)
+
+fun RuleScheduleConfig.resolveSourceMode(): RuleScheduleSourceMode {
+    return sourceMode ?: when (sourceType) {
+        RuleScheduleTimeSourceType.FIXED -> RuleScheduleSourceMode.MANUAL_CALENDAR_RULE
+        RuleScheduleTimeSourceType.SLOT -> RuleScheduleSourceMode.SLOT_DRIVEN
+    }
+}
+
+fun RuleScheduleConfig.allReferencedSlotKeys(): List<String> {
+    val slotDrivenKeys = slotDrivenConfig?.let { config ->
+        listOfNotNull(
+            config.startAtSlotKey,
+            config.frequencySlotKey,
+            config.intervalSlotKey,
+            config.weekdaysSlotKey,
+            config.dayOfMonthSlotKey,
+            config.monthlyWeekOrdinalSlotKey,
+            config.monthlyWeekdaySlotKey,
+            config.endAtSlotKey,
+            config.occurrenceCountSlotKey,
+            config.timezoneSlotKey,
+        )
+    }.orEmpty()
+    return (slotKeys + slotDrivenKeys).filter { it.isNotBlank() }.distinct()
+}
 
 data class SystemVariableConfigDefinition(
     val key: String,
@@ -425,5 +544,7 @@ fun resolveEffectiveRuleOutputTargets(rule: RuleDefinition): List<RuleOutputTarg
 }
 
 fun resolveEffectiveRuleTriggerModes(rule: RuleDefinition): List<RuleTriggerMode> {
-    return rule.triggerModes.ifEmpty { listOf(RuleTriggerMode.ON_VALUE_CHANGED) }
+    return rule.triggerModes.ifEmpty {
+        listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE)
+    }
 }

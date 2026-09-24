@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 import com.example.itemmanagement.data.model.attribute.RuleBindingCreationSource
 import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
 import com.example.itemmanagement.data.model.attribute.RuleBindingStatus
+import com.example.itemmanagement.data.model.attribute.RuleRuntimeState
 import com.example.itemmanagement.data.model.attribute.RuleSlotBinding
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -37,6 +38,7 @@ data class ItemRuleBindingEntity(
     val slotBindingsJson: String,
     val togglePlacementSlotKey: String? = null,
     val isEnabled: Boolean = true,
+    val runtimeStateJson: String? = null,
     val status: RuleBindingStatus = RuleBindingStatus.ACTIVE,
     val creationSource: RuleBindingCreationSource = RuleBindingCreationSource.ATTRIBUTE_MANAGEMENT,
     val description: String? = null,
@@ -46,6 +48,7 @@ data class ItemRuleBindingEntity(
 
 private val itemRuleBindingGson = Gson()
 private val itemRuleSlotBindingListType = object : TypeToken<List<RuleSlotBinding>>() {}.type
+private val itemRuleRuntimeStateType = object : TypeToken<RuleRuntimeState>() {}.type
 
 fun ItemRuleBindingEntity.toModel(): RuleBindingInstance {
     val slotBindings = runCatching {
@@ -57,6 +60,11 @@ fun ItemRuleBindingEntity.toModel(): RuleBindingInstance {
         .takeIf { it.isNotBlank() }
         ?: slotBindings.firstOrNull()?.slotKey
         ?: "entry"
+    val runtimeState = runCatching {
+        runtimeStateJson
+            ?.takeIf { it.isNotBlank() }
+            ?.let { itemRuleBindingGson.fromJson<RuleRuntimeState>(it, itemRuleRuntimeStateType) }
+    }.getOrNull()
 
     return RuleBindingInstance(
         id = id,
@@ -66,6 +74,7 @@ fun ItemRuleBindingEntity.toModel(): RuleBindingInstance {
         slotBindings = slotBindings,
         togglePlacementSlotKey = togglePlacementSlotKey,
         isEnabled = isEnabled,
+        runtimeState = runtimeState,
         status = status,
         creationSource = creationSource,
         description = description,
@@ -86,6 +95,7 @@ fun RuleBindingInstance.toItemRuleBindingEntity(
         slotBindingsJson = itemRuleBindingGson.toJson(slotBindings),
         togglePlacementSlotKey = togglePlacementSlotKey,
         isEnabled = isEnabled,
+        runtimeStateJson = runtimeState?.let(itemRuleBindingGson::toJson),
         status = status,
         creationSource = creationSource,
         description = description,

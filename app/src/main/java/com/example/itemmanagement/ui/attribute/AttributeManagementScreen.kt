@@ -2,8 +2,12 @@ package com.example.itemmanagement.ui.attribute
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
@@ -60,21 +65,37 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import com.example.itemmanagement.data.model.attribute.AttributeInputMode
 import com.example.itemmanagement.data.model.attribute.AttributeNumberFormat
 import com.example.itemmanagement.data.model.attribute.AttributeValueSource
 import com.example.itemmanagement.data.model.attribute.AttributeValueType
 import com.example.itemmanagement.data.model.attribute.RuleActivationMode
+import com.example.itemmanagement.data.model.attribute.RuleCanvasConnection
+import com.example.itemmanagement.data.model.attribute.RuleCanvasDefinition
+import com.example.itemmanagement.data.model.attribute.RuleCanvasLayoutMode
+import com.example.itemmanagement.data.model.attribute.RuleCanvasNode
+import com.example.itemmanagement.data.model.attribute.RuleCanvasNodeStyleHint
+import com.example.itemmanagement.data.model.attribute.RuleCanvasNodeType
+import com.example.itemmanagement.data.model.attribute.RuleCanvasSlotConfig
+import com.example.itemmanagement.data.model.attribute.RuleCanvasSlotValueSource
 import com.example.itemmanagement.data.model.attribute.RuleComputationType
 import com.example.itemmanagement.data.model.attribute.RuleOutputTargetType
 import com.example.itemmanagement.data.model.attribute.RuleOutputUpdateMode
+import com.example.itemmanagement.data.model.attribute.RuleScheduleSourceMode
+import com.example.itemmanagement.data.model.attribute.RuleScheduleTimeSourceType
 import com.example.itemmanagement.data.model.attribute.RuleSlotDirection
 import com.example.itemmanagement.data.model.attribute.RuleSlotSourceType
 import com.example.itemmanagement.data.model.attribute.RuleSlotValueType
@@ -84,6 +105,7 @@ import com.example.itemmanagement.ui.components.GlassCard
 import com.example.itemmanagement.ui.components.MiaoIcon
 import com.example.itemmanagement.ui.main.LiquidBackground
 import com.example.itemmanagement.ui.theme.LiquidGlassTheme
+import com.example.itemmanagement.data.model.attribute.findSystemVariableKey
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,20 +123,13 @@ fun AttributeManagementScreen(
     onCycleRuleManagementTypeFilter: () -> Unit,
     onCycleRuleUsageFilter: () -> Unit,
     onClearRuleFilters: () -> Unit,
-    onCycleTemplateTypeFilter: () -> Unit,
-    onCycleTemplateCategoryFilter: () -> Unit,
-    onCycleRuleTypeFilter: () -> Unit,
-    onClearTemplateFilters: () -> Unit,
     onOpenCreateAttribute: () -> Unit,
     onOpenCreateRule: () -> Unit,
-    onOpenCreateFromTemplate: () -> Unit,
     onOpenAttributeDetail: (AttributeListItemUiModel) -> Unit,
     onOpenRuleDetail: (RuleListItemUiModel) -> Unit,
-    onOpenTemplateDetail: (TemplateListItemUiModel) -> Unit,
     onOpenEditAttribute: (String) -> Unit,
+    onDuplicateAttribute: (String) -> Unit,
     onOpenEditRule: (String) -> Unit,
-    onCreateFromTemplate: (String) -> Unit,
-    onCreateRuleFromTemplate: (String) -> Unit,
     onSaveAttributeDraft: (AttributeEditorDraftUiModel) -> Unit,
     onOpenRuleBindingWizard: (AttributeEditorDraftUiModel, String?) -> Unit,
     onSaveRuleBindingWizard: (RuleBindingWizardDraftUiModel) -> Unit,
@@ -154,76 +169,55 @@ fun AttributeManagementScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 when (val routeState = uiState.routeState) {
                     AttributeManagementRouteState.List -> {
+                        val isRuleEntryMode = uiState.entryMode == AttributeManagementEntryMode.RULES
                         AttributeManagementHeader(
-                            title = "属性管理",
+                            title = if (isRuleEntryMode) "规则管理" else "属性管理",
                             searchQuery = uiState.searchQuery,
+                            entryMode = uiState.entryMode,
                             selectedTab = uiState.selectedTab,
                             isListMode = true,
                             onBack = onClose,
                             onTabSelected = onTabSelected,
                             onSearchQueryChange = onSearchQueryChange,
-                            onPrimaryActionClick = when (uiState.selectedTab) {
-                                AttributeManagementTab.ATTRIBUTES -> onOpenCreateAttribute
-                                AttributeManagementTab.RULES -> onOpenCreateRule
-                                AttributeManagementTab.TEMPLATES -> onOpenCreateFromTemplate
-                            },
+                            onPrimaryActionClick = if (isRuleEntryMode) onOpenCreateRule else onOpenCreateAttribute,
                         )
 
-                        when (uiState.selectedTab) {
-                            AttributeManagementTab.ATTRIBUTES -> {
-                                AttributeFilterSection(
-                                    filters = uiState.attributePane.filters,
-                                    totalCount = uiState.attributePane.totalCount,
-                                    onCycleSource = onCycleAttributeSourceFilter,
-                                    onCycleValueType = onCycleAttributeValueTypeFilter,
-                                    onCycleRuleBinding = onCycleAttributeRuleBindingFilter,
-                                    onClearFilters = onClearAttributeFilters,
-                                )
-                                AttributeListPane(
-                                    paneState = uiState.attributePane,
-                                    listState = listState,
-                                    onOpenAttributeDetail = onOpenAttributeDetail,
-                                    onEditAttribute = onOpenEditAttribute,
-                                    onDeleteAttribute = onDeleteAttribute,
-                                )
-                            }
-
-                            AttributeManagementTab.RULES -> {
-                                RuleFilterSection(
-                                    filters = uiState.rulePane.filters,
-                                    totalCount = uiState.rulePane.totalCount,
-                                    systemCount = uiState.rulePane.systemCount,
-                                    customCount = uiState.rulePane.customCount,
-                                    boundCount = uiState.rulePane.boundCount,
-                                    onCycleSource = onCycleRuleSourceFilter,
-                                    onCycleRuleType = onCycleRuleManagementTypeFilter,
-                                    onCycleUsage = onCycleRuleUsageFilter,
-                                    onClearFilters = onClearRuleFilters,
-                                )
-                                RuleListPane(
-                                    paneState = uiState.rulePane,
-                                    listState = listState,
-                                    onOpenRuleDetail = onOpenRuleDetail,
-                                    onEditRule = onOpenEditRule,
-                                    onDeleteRule = onDeleteRule,
-                                )
-                            }
-
-                            AttributeManagementTab.TEMPLATES -> {
-                                TemplateFilterSection(
-                                    filters = uiState.templatePane.filters,
-                                    totalCount = uiState.templatePane.totalCount,
-                                    onCycleTemplateType = onCycleTemplateTypeFilter,
-                                    onCycleTemplateCategory = onCycleTemplateCategoryFilter,
-                                    onCycleRuleType = onCycleRuleTypeFilter,
-                                    onClearFilters = onClearTemplateFilters,
-                                )
-                                TemplateListPane(
-                                    paneState = uiState.templatePane,
-                                    listState = listState,
-                                    onOpenTemplateDetail = onOpenTemplateDetail,
-                                )
-                            }
+                        if (isRuleEntryMode) {
+                            RuleFilterSection(
+                                filters = uiState.rulePane.filters,
+                                totalCount = uiState.rulePane.totalCount,
+                                systemCount = uiState.rulePane.systemCount,
+                                customCount = uiState.rulePane.customCount,
+                                boundCount = uiState.rulePane.boundCount,
+                                onCycleSource = onCycleRuleSourceFilter,
+                                onCycleRuleType = onCycleRuleManagementTypeFilter,
+                                onCycleUsage = onCycleRuleUsageFilter,
+                                onClearFilters = onClearRuleFilters,
+                            )
+                            RuleListPane(
+                                paneState = uiState.rulePane,
+                                listState = listState,
+                                onOpenRuleDetail = onOpenRuleDetail,
+                                onEditRule = onOpenEditRule,
+                                onDeleteRule = onDeleteRule,
+                            )
+                        } else {
+                            AttributeFilterSection(
+                                filters = uiState.attributePane.filters,
+                                totalCount = uiState.attributePane.totalCount,
+                                onCycleSource = onCycleAttributeSourceFilter,
+                                onCycleValueType = onCycleAttributeValueTypeFilter,
+                                onCycleRuleBinding = onCycleAttributeRuleBindingFilter,
+                                onClearFilters = onClearAttributeFilters,
+                            )
+                            AttributeListPane(
+                                paneState = uiState.attributePane,
+                                listState = listState,
+                                onOpenAttributeDetail = onOpenAttributeDetail,
+                                onEditAttribute = onOpenEditAttribute,
+                                onDuplicateAttribute = onDuplicateAttribute,
+                                onDeleteAttribute = onDeleteAttribute,
+                            )
                         }
                     }
 
@@ -259,22 +253,14 @@ fun AttributeManagementScreen(
 
                     is AttributeManagementRouteState.TemplateDetail -> {
                         SecondaryPageHeader(
-                            title = routeState.detail.name,
-                            subtitle = "模板详情",
+                            title = "模板功能已停用",
+                            subtitle = "请返回属性管理或规则管理继续操作",
                             onBack = onNavigateBackInPage,
                         )
-                        TemplateDetailPage(
-                            detail = routeState.detail,
-                            onCreateFromTemplate = {
-                                if (routeState.detail is TemplateDetailUiModel.AttributeTemplateDetail) {
-                                    onCreateFromTemplate(routeState.detail.id)
-                                }
-                            },
-                            onCreateRuleFromTemplate = {
-                                if (routeState.detail is TemplateDetailUiModel.RuleTemplateDetail) {
-                                    onCreateRuleFromTemplate(routeState.detail.id)
-                                }
-                            },
+                        EmptyStateCard(
+                            title = "模板管理已移除",
+                            description = "属性现在直接新建，规则也直接在规则管理中创建，不再通过模板入口操作。",
+                            modifier = Modifier.padding(16.dp),
                         )
                     }
 
@@ -401,6 +387,7 @@ fun AttributeManagementScreen(
 private fun AttributeManagementHeader(
     title: String,
     searchQuery: String,
+    entryMode: AttributeManagementEntryMode,
     selectedTab: AttributeManagementTab,
     isListMode: Boolean,
     onBack: () -> Unit,
@@ -409,12 +396,12 @@ private fun AttributeManagementHeader(
     onPrimaryActionClick: (() -> Unit)?,
 ) {
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val headerTopPadding = (statusBarTopPadding - 16.dp).coerceAtLeast(0.dp)
+    val headerTopPadding = (statusBarTopPadding - 8.dp).coerceAtLeast(0.dp)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = headerTopPadding, start = 16.dp, end = 16.dp, bottom = 8.dp),
+            .padding(top = headerTopPadding, start = 16.dp, end = 16.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         GlassCard(
@@ -428,57 +415,35 @@ private fun AttributeManagementHeader(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    IconButton(
+                        modifier = Modifier.size(36.dp),
+                        onClick = onBack,
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
                     Box(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.weight(1f),
                         contentAlignment = Alignment.Center,
                     ) {
-                        IconButton(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .align(Alignment.CenterStart),
-                            onClick = onBack,
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        if (isListMode && onPrimaryActionClick != null) {
-                            IconButton(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .align(Alignment.CenterEnd),
-                                onClick = onPrimaryActionClick,
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "创建")
-                            }
-                        } else {
-                            Spacer(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .align(Alignment.CenterEnd)
-                            )
+                    }
+                    if (isListMode && onPrimaryActionClick != null) {
+                        IconButton(
+                            modifier = Modifier.size(36.dp),
+                            onClick = onPrimaryActionClick,
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "创建")
                         }
+                    } else {
+                        Spacer(modifier = Modifier.size(36.dp))
                     }
                 }
 
                 if (isListMode) {
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        AttributeManagementTab.values().forEachIndexed { index, tab ->
-                            SegmentedButton(
-                                selected = tab == selectedTab,
-                                onClick = { onTabSelected(tab) },
-                                shape = SegmentedButtonDefaults.itemShape(
-                                    index = index,
-                                    count = AttributeManagementTab.values().size,
-                                ),
-                                label = { Text(tab.displayName) },
-                            )
-                        }
-                    }
-
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = onSearchQueryChange,
@@ -486,10 +451,9 @@ private fun AttributeManagementHeader(
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         placeholder = {
                             Text(
-                                when (selectedTab) {
-                                    AttributeManagementTab.ATTRIBUTES -> "搜索属性、模板名、规则名"
-                                    AttributeManagementTab.RULES -> "搜索规则、依赖项、输出定义"
-                                    AttributeManagementTab.TEMPLATES -> "搜索模板、规则类型、输出定义"
+                                when (entryMode) {
+                                    AttributeManagementEntryMode.ATTRIBUTES -> "输入关键词"
+                                    AttributeManagementEntryMode.RULES -> "输入关键词"
                                 }
                             )
                         },
@@ -510,22 +474,47 @@ private fun SecondaryPageHeader(
     subtitle: String,
     onBack: () -> Unit,
 ) {
-    AttributeManagementHeader(
-        title = title,
-        searchQuery = "",
-        selectedTab = AttributeManagementTab.ATTRIBUTES,
-        isListMode = false,
-        onBack = onBack,
-        onTabSelected = {},
-        onSearchQueryChange = {},
-        onPrimaryActionClick = null,
-    )
-    Text(
-        text = subtitle,
-        modifier = Modifier.padding(horizontal = 16.dp),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val headerTopPadding = (statusBarTopPadding - 8.dp).coerceAtLeast(0.dp)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = headerTopPadding, start = 16.dp, end = 16.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            blurRadius = 28.dp,
+            contentPadding = 10.dp,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    modifier = Modifier.size(36.dp),
+                    onClick = onBack,
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(modifier = Modifier.size(36.dp))
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -707,6 +696,7 @@ private fun AttributeListPane(
     listState: androidx.compose.foundation.lazy.LazyListState,
     onOpenAttributeDetail: (AttributeListItemUiModel) -> Unit,
     onEditAttribute: (String) -> Unit,
+    onDuplicateAttribute: (String) -> Unit,
     onDeleteAttribute: (AttributeListItemUiModel) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -718,7 +708,7 @@ private fun AttributeListPane(
             ListContentState.Empty -> {
                 EmptyStateCard(
                     title = "还没有属性",
-                    description = "可以先从基础模板或价格模板创建一个属性。",
+                    description = "可以先创建一个属性定义，再在物品页按需使用。",
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(16.dp),
@@ -728,7 +718,7 @@ private fun AttributeListPane(
             ListContentState.SearchEmpty -> {
                 EmptyStateCard(
                     title = "没有找到匹配属性",
-                    description = "可以调整关键词，或从模板创建新属性。",
+                    description = "可以调整关键词，继续搜索属性名称、值类型或值来源。",
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(16.dp),
@@ -738,7 +728,7 @@ private fun AttributeListPane(
             ListContentState.FilterEmpty -> {
                 EmptyStateCard(
                     title = "当前筛选条件下没有属性",
-                    description = "可以清空筛选，或切换模板来源后再看。",
+                    description = "可以清空筛选，或调整来源和值类型后再看。",
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(16.dp),
@@ -762,6 +752,7 @@ private fun AttributeListPane(
                             item = item,
                             onOpen = { onOpenAttributeDetail(item) },
                             onEdit = { onEditAttribute(item.id) },
+                            onDuplicate = { onDuplicateAttribute(item.id) },
                             onDelete = { onDeleteAttribute(item) },
                         )
                     }
@@ -798,7 +789,7 @@ private fun RuleListPane(
             ListContentState.Empty -> {
                 EmptyStateCard(
                     title = "还没有规则",
-                    description = "可以先新建规则，或从规则模板创建后再集中管理。",
+                    description = "可以先新建规则，再在物品页按需绑定和使用。",
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(16.dp),
@@ -942,6 +933,7 @@ private fun AttributeCard(
     item: AttributeListItemUiModel,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -962,7 +954,6 @@ private fun AttributeCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(end = 52.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(
@@ -981,7 +972,7 @@ private fun AttributeCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = "值属性：${item.propertySummary}",
+                        text = item.propertySummary,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -1012,6 +1003,14 @@ private fun AttributeCard(
                             onClick = {
                                 menuExpanded = false
                                 onEdit()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("复制属性") },
+                            leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onDuplicate()
                             },
                         )
                         DropdownMenuItem(
@@ -1072,6 +1071,13 @@ private fun RuleCard(
                         text = "${item.sourceLabel} · ${item.ruleTypeLabel}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "启用：${item.activationSummary}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = "触发：${item.triggerSummary}",
@@ -1308,11 +1314,50 @@ private fun AttributeDetailPage(
         }
         item {
             SectionCard(title = "属性定义") {
-                DetailLine("属性名", detail.name)
-                DetailLine("属性描述", detail.description ?: "暂无描述")
-                DetailLine("值类型", detail.valueDefinition.valueType)
-                DetailLine("值来源", detail.valueDefinition.valueSource)
-                DetailLine("来源模板", detail.templateName ?: "无")
+                DetailTextBlock("属性名", detail.name)
+                DetailTextBlock("属性描述", detail.description ?: "暂无描述")
+                DetailTextBlock("值类型", detail.valueDefinition.valueType)
+                DetailTextBlock("值来源", detail.valueDefinition.valueSource)
+            }
+        }
+        item {
+            SectionCard(title = "操作") {
+                Text(
+                    text = if (detail.isSystemBuiltIn) {
+                        "系统属性当前阶段仅支持查看。"
+                    } else {
+                        "自定义属性当前仅支持修改名称与说明，值类型和值来源保持不变。"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (detail.isEditable) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onEdit)
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null)
+                        Text("编辑属性", fontWeight = FontWeight.Medium)
+                    }
+                }
+                if (detail.isDeletable) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onDelete)
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Text("删除属性", fontWeight = FontWeight.Medium)
+                    }
+                }
             }
         }
     }
@@ -1344,7 +1389,10 @@ private fun RuleDetailPage(
         item {
             SectionCard(title = "规则概览") {
                 DetailLine("规则类型", detail.ruleType)
+                DetailLine("启用控制", detail.activationSummary)
                 DetailLine("触发方式", if (detail.triggerModes.isEmpty()) "无" else detail.triggerModes.joinToString(" / "))
+                detail.scheduleSummary?.let { DetailLine("周期调度", it) }
+                detail.scheduleEventSummary?.let { DetailLine("事件生成", it) }
             }
         }
         item {
@@ -1513,7 +1561,10 @@ private fun TemplateDetailPage(
                 item {
                     SectionCard(title = "规则边界") {
                         DetailLine("规则类型", detail.ruleType)
+                        DetailLine("启用控制", detail.activationSummary)
                         DetailLine("触发方式", if (detail.triggerModes.isEmpty()) "无" else detail.triggerModes.joinToString(" / "))
+                        detail.scheduleSummary?.let { DetailLine("周期调度", it) }
+                        detail.scheduleEventSummary?.let { DetailLine("事件生成", it) }
                         DetailLine("引用统计", detail.referenceCountText)
                     }
                 }
@@ -1611,7 +1662,7 @@ private fun AttributeEditorPage(
             DetailSummaryCard(
                 icon = attributeEditorPreviewIcon(valueType, numberFormat, unitCategory),
                 title = if (name.isBlank()) "未命名属性" else name,
-                summary = draft.templateName?.let { "基于 $it" } ?: "自定义属性定义",
+                summary = if (draft.isEditMode) "仅修改名称与说明" else "自定义属性定义",
             )
         }
         item {
@@ -1630,199 +1681,226 @@ private fun AttributeEditorPage(
                     label = { Text("说明") },
                     minLines = 2,
                 )
-                if (!draft.templateName.isNullOrBlank()) {
-                    DetailLine("来源模板", draft.templateName)
-                }
             }
         }
-        item {
-            SectionCard(title = "值定义") {
-                EnumChipGroup(
-                    title = "值类型",
-                    options = AttributeValueType.values().toList(),
-                    selected = valueType,
-                    label = { attributeValueTypeLabel(it) },
-                    onSelected = {
-                        valueType = it
-                        val currentOption = draft.systemVariableOptions.firstOrNull { option -> option.key == systemVariableKey }
-                        if (currentOption != null && currentOption.valueType != it) {
-                            systemVariableKey = ""
-                        }
-                    },
-                )
-                EnumChipGroup(
-                    title = "值来源",
-                    options = listOf(AttributeValueSource.INPUT, AttributeValueSource.FIXED, AttributeValueSource.SYSTEM),
-                    selected = valueSource,
-                    label = { attributeValueSourceLabel(it) },
-                    onSelected = { valueSource = it },
-                )
-                Text(
-                    text = "流程：值类型 -> 值来源 -> 值属性配置",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                when (valueType) {
-                    AttributeValueType.TEXT -> {
-                        Text(
-                            text = "文本类型当前不配置额外值属性。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-
-                    AttributeValueType.NUMBER -> {
-                        EnumChipGroup(
-                            title = "数值格式",
-                            options = listOf(
-                                AttributeNumberFormat.PLAIN,
-                                AttributeNumberFormat.PERCENTAGE,
-                                AttributeNumberFormat.WITH_UNIT,
-                            ),
-                            selected = numberFormat,
-                            label = { attributeNumberFormatLabel(it) },
-                            onSelected = { numberFormat = it },
-                        )
-                        if (numberFormat == AttributeNumberFormat.WITH_UNIT) {
-                            EnumChipGroup(
-                                title = "推荐单位类型",
-                                options = suggestedUnitCategories(),
-                                selected = unitCategory,
-                                label = { it },
-                                onSelected = { unitCategory = it },
-                            )
-                            OutlinedTextField(
-                                value = unitCategory,
-                                onValueChange = { unitCategory = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("单位类型") },
-                                supportingText = { Text("例如：价格、面积、长度、重量") },
-                                singleLine = true,
-                            )
-                            OutlinedTextField(
-                                value = defaultUnit,
-                                onValueChange = { defaultUnit = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("具体单位") },
-                                supportingText = { Text("例如：CNY、m2、cm、kg") },
-                                singleLine = true,
-                            )
-                            val suggestedUnits = remember(unitCategory) { suggestedUnits(unitCategory) }
-                            if (suggestedUnits.isNotEmpty()) {
-                                EnumChipGroup(
-                                    title = "常用单位",
-                                    options = suggestedUnits,
-                                    selected = defaultUnit,
-                                    label = { it },
-                                    onSelected = { defaultUnit = it },
-                                )
-                            }
-                        }
-                        OutlinedTextField(
-                            value = decimalPlacesText,
-                            onValueChange = { decimalPlacesText = it.filter(Char::isDigit) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("小数位数") },
-                            singleLine = true,
-                        )
-                        FilterChip(
-                            selected = allowNegative,
-                            onClick = { allowNegative = !allowNegative },
-                            label = { Text(if (allowNegative) "允许负数" else "不允许负数") },
-                        )
-                    }
-
-                    AttributeValueType.DATE -> {
-                        Text(
-                            text = "日期类型当前仅配置值来源，录入时统一使用日期输入框与日期选择器。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-
-                    AttributeValueType.BOOLEAN -> {
-                        EnumChipGroup(
-                            title = "交互方式",
-                            options = listOf(AttributeInputMode.BOOLEAN_SWITCH, AttributeInputMode.TEXT_INPUT),
-                            selected = booleanInputMode,
-                            label = { booleanAttributeInputModeLabel(it) },
-                            onSelected = { booleanInputMode = it },
-                        )
-                        OutlinedTextField(
-                            value = trueLabel,
-                            onValueChange = { trueLabel = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("真值文案") },
-                            singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = falseLabel,
-                            onValueChange = { falseLabel = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("假值文案") },
-                            singleLine = true,
-                        )
-                    }
-
-                    AttributeValueType.SELECT -> {
-                        FilterChip(
-                            selected = isMultiSelect,
-                            onClick = { isMultiSelect = !isMultiSelect },
-                            label = { Text(if (isMultiSelect) "当前为多选" else "当前为单选") },
-                        )
-                        OutlinedTextField(
-                            value = optionItemsText,
-                            onValueChange = { optionItemsText = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("属性选项") },
-                            supportingText = { Text("每行一个选项，也支持逗号分隔") },
-                            minLines = 3,
-                        )
-                    }
-                }
-                if (valueSource == AttributeValueSource.FIXED) {
-                    OutlinedTextField(
-                        value = defaultValue,
-                        onValueChange = { defaultValue = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("固定值") },
-                        supportingText = {
-                            Text(
-                                "该值将作为属性的固定结果保存，不需要用户输入。"
-                            )
-                        },
-                    )
-                }
-                if (valueSource == AttributeValueSource.SYSTEM) {
+        if (draft.isEditMode) {
+            item {
+                SectionCard(title = "值定义") {
                     Text(
-                        text = "系统来源会把属性值直接绑定到 App 内部系统级变量。当前仅开放已实现变量，降级变量只展示说明，不可选用。",
+                        text = "编辑已有属性时，当前仅支持修改名称和说明，值类型、值来源和值属性保持不变。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (selectedSystemVariable != null && selectedSystemVariable.valueType != valueType) {
-                        Text(
-                            text = "已选系统变量“${selectedSystemVariable.displayName}”与当前值类型不一致，请重新选择。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                    DetailTextBlock("值类型", attributeValueTypeLabel(valueType))
+                    DetailTextBlock("值来源", attributeValueSourceLabel(valueSource))
+                    DetailTextBlock("值属性", buildAttributePropertySummaryForEditor(
+                        valueType = valueType,
+                        valueSource = valueSource,
+                        numberFormat = numberFormat,
+                        unitCategory = unitCategory,
+                        defaultUnit = defaultUnit,
+                        decimalPlacesText = decimalPlacesText,
+                        allowNegative = allowNegative,
+                        booleanInputMode = booleanInputMode,
+                        trueLabel = trueLabel,
+                        falseLabel = falseLabel,
+                        optionItemsText = optionItemsText,
+                        isMultiSelect = isMultiSelect,
+                        systemVariableLabel = selectedSystemVariable?.displayName,
+                        defaultValue = defaultValue,
+                    ))
+                }
+            }
+        } else {
+            item {
+                SectionCard(title = "值定义") {
+                    EnumChipGroup(
+                        title = "值类型",
+                        options = AttributeValueType.values().toList(),
+                        selected = valueType,
+                        label = { attributeValueTypeLabel(it) },
+                        onSelected = {
+                            valueType = it
+                            val currentOption = draft.systemVariableOptions.firstOrNull { option -> option.key == systemVariableKey }
+                            if (currentOption != null && currentOption.valueType != it) {
+                                systemVariableKey = ""
+                            }
+                        },
+                    )
+                    EnumChipGroup(
+                        title = "值来源",
+                        options = listOf(AttributeValueSource.INPUT, AttributeValueSource.FIXED, AttributeValueSource.SYSTEM),
+                        selected = valueSource,
+                        label = { attributeValueSourceLabel(it) },
+                        onSelected = { valueSource = it },
+                    )
+                    Text(
+                        text = "流程：值类型 -> 值来源 -> 值属性配置",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    when (valueType) {
+                        AttributeValueType.TEXT -> {
+                            Text(
+                                text = "文本类型当前不配置额外值属性。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+
+                        AttributeValueType.NUMBER -> {
+                            EnumChipGroup(
+                                title = "数值格式",
+                                options = listOf(
+                                    AttributeNumberFormat.PLAIN,
+                                    AttributeNumberFormat.PERCENTAGE,
+                                    AttributeNumberFormat.WITH_UNIT,
+                                ),
+                                selected = numberFormat,
+                                label = { attributeNumberFormatLabel(it) },
+                                onSelected = { numberFormat = it },
+                            )
+                            if (numberFormat == AttributeNumberFormat.WITH_UNIT) {
+                                EnumChipGroup(
+                                    title = "推荐单位类型",
+                                    options = suggestedUnitCategories(),
+                                    selected = unitCategory,
+                                    label = { it },
+                                    onSelected = { unitCategory = it },
+                                )
+                                OutlinedTextField(
+                                    value = unitCategory,
+                                    onValueChange = { unitCategory = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("单位类型") },
+                                    supportingText = { Text("例如：价格、面积、长度、重量") },
+                                    singleLine = true,
+                                )
+                                OutlinedTextField(
+                                    value = defaultUnit,
+                                    onValueChange = { defaultUnit = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("具体单位") },
+                                    supportingText = { Text("例如：CNY、m2、cm、kg") },
+                                    singleLine = true,
+                                )
+                                val suggestedUnits = remember(unitCategory) { suggestedUnits(unitCategory) }
+                                if (suggestedUnits.isNotEmpty()) {
+                                    EnumChipGroup(
+                                        title = "常用单位",
+                                        options = suggestedUnits,
+                                        selected = defaultUnit,
+                                        label = { it },
+                                        onSelected = { defaultUnit = it },
+                                    )
+                                }
+                            }
+                            OutlinedTextField(
+                                value = decimalPlacesText,
+                                onValueChange = { decimalPlacesText = it.filter(Char::isDigit) },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("小数位数") },
+                                singleLine = true,
+                            )
+                            FilterChip(
+                                selected = allowNegative,
+                                onClick = { allowNegative = !allowNegative },
+                                label = { Text(if (allowNegative) "允许负数" else "不允许负数") },
+                            )
+                        }
+
+                        AttributeValueType.DATE -> {
+                            Text(
+                                text = "日期类型当前仅配置值来源，录入时统一使用日期输入框与日期选择器。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+
+                        AttributeValueType.BOOLEAN -> {
+                            EnumChipGroup(
+                                title = "交互方式",
+                                options = listOf(AttributeInputMode.BOOLEAN_SWITCH, AttributeInputMode.TEXT_INPUT),
+                                selected = booleanInputMode,
+                                label = { booleanAttributeInputModeLabel(it) },
+                                onSelected = { booleanInputMode = it },
+                            )
+                            OutlinedTextField(
+                                value = trueLabel,
+                                onValueChange = { trueLabel = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("真值文案") },
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = falseLabel,
+                                onValueChange = { falseLabel = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("假值文案") },
+                                singleLine = true,
+                            )
+                        }
+
+                        AttributeValueType.SELECT -> {
+                            FilterChip(
+                                selected = isMultiSelect,
+                                onClick = { isMultiSelect = !isMultiSelect },
+                                label = { Text(if (isMultiSelect) "当前为多选" else "当前为单选") },
+                            )
+                            OutlinedTextField(
+                                value = optionItemsText,
+                                onValueChange = { optionItemsText = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("属性选项") },
+                                supportingText = { Text("每行一个选项，也支持逗号分隔") },
+                                minLines = 3,
+                            )
+                        }
+                    }
+                    if (valueSource == AttributeValueSource.FIXED) {
+                        OutlinedTextField(
+                            value = defaultValue,
+                            onValueChange = { defaultValue = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("固定值") },
+                            supportingText = {
+                                Text(
+                                    "该值将作为属性的固定结果保存，不需要用户输入。"
+                                )
+                            },
                         )
                     }
-                    if (compatibleSystemVariables.isEmpty()) {
+                    if (valueSource == AttributeValueSource.SYSTEM) {
                         Text(
-                            text = "当前值类型下暂无可绑定的系统级变量。",
+                            text = "系统来源会把属性值直接绑定到 App 内部系统级变量。当前仅开放已实现变量，降级变量只展示说明，不可选用。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    } else {
-                        compatibleSystemVariables.forEach { option ->
-                            SystemVariableOptionCard(
-                                option = option,
-                                isSelected = option.key == systemVariableKey,
-                                onClick = {
-                                    if (option.isSelectable) {
-                                        systemVariableKey = option.key
-                                    }
-                                },
+                        if (selectedSystemVariable != null && selectedSystemVariable.valueType != valueType) {
+                            Text(
+                                text = "已选系统变量“${selectedSystemVariable.displayName}”与当前值类型不一致，请重新选择。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
                             )
+                        }
+                        if (compatibleSystemVariables.isEmpty()) {
+                            Text(
+                                text = "当前值类型下暂无可绑定的系统级变量。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            compatibleSystemVariables.forEach { option ->
+                                SystemVariableOptionCard(
+                                    option = option,
+                                    isSelected = option.key == systemVariableKey,
+                                    onClick = {
+                                        if (option.isSelectable) {
+                                            systemVariableKey = option.key
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -1831,7 +1909,7 @@ private fun AttributeEditorPage(
         item {
             PrimaryActionCard(
                 title = draft.saveButtonText,
-                description = if (draft.isEditMode) "保存当前属性定义的修改。" else "创建新的属性定义。",
+                description = if (draft.isEditMode) "保存当前属性名称与说明的修改。" else "创建新的属性定义。",
                 actionLabel = draft.saveButtonText,
                 onClick = {
                     onSave(
@@ -2822,26 +2900,41 @@ private fun RuleWorkbenchPage(
     var toggleDefaultEnabled by rememberSaveable(draft.id, draft.templateId) {
         mutableStateOf(draft.toggleDefaultEnabled)
     }
+    var isScheduledEnabled by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.isScheduledEnabled)
+    }
+    var scheduleTimeSourceType by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.scheduleTimeSourceType)
+    }
+    var scheduleFixedValue by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.scheduleFixedValue)
+    }
+    var scheduleSlotKeys by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.scheduleSlotKeys)
+    }
+    var scheduleDescription by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.scheduleDescription)
+    }
+    var generateCalendarEvent by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.generateCalendarEvent)
+    }
+    var scheduleEventTitleTemplate by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.scheduleEventTitleTemplate)
+    }
+    var scheduleEventDateSlotKey by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.scheduleEventDateSlotKey)
+    }
+    var scheduleEventDedupeKeyStrategy by rememberSaveable(draft.id, draft.templateId) {
+        mutableStateOf(draft.scheduleEventDedupeKeyStrategy)
+    }
+
     val initialSlots = remember(draft.id, draft.templateId) {
-        draft.slots.ifEmpty {
-            listOf(
-                createRuleWorkbenchSlotDraft(
-                    direction = RuleSlotDirection.INPUT,
-                    sourceType = RuleSlotSourceType.ATTRIBUTE_INPUT,
-                    existingSlots = emptyList(),
-                ),
-                createRuleWorkbenchSlotDraft(
-                    direction = RuleSlotDirection.OUTPUT,
-                    sourceType = RuleSlotSourceType.ATTRIBUTE_OUTPUT,
-                    existingSlots = emptyList(),
-                ),
-            )
-        }
+        ensureRuleWorkbenchOperands(
+            expression = draft.expression,
+            existingOperands = draft.slots,
+        )
     }
     var slots by remember(draft.id, draft.templateId) { mutableStateOf(initialSlots) }
-    var expandedSlotIds by remember(draft.id, draft.templateId) {
-        mutableStateOf(initialSlots.take(2).map { it.id }.toSet())
-    }
     var expressionField by rememberSaveable(
         draft.id,
         draft.templateId,
@@ -2854,24 +2947,65 @@ private fun RuleWorkbenchPage(
             )
         )
     }
+    var canvasState by remember(draft.id, draft.templateId) {
+        mutableStateOf(
+            buildRuleWorkbenchCanvasState(
+                expression = draft.expression,
+                slots = initialSlots,
+                canvasDefinition = draft.canvasDefinition,
+            )
+        )
+    }
+    var isCanvasFullscreen by rememberSaveable(draft.id, draft.templateId) { mutableStateOf(false) }
+    var showOperandConfigDialog by remember { mutableStateOf<String?>(null) }
 
     val inputSlots = slots.filter { it.direction == RuleSlotDirection.INPUT }
     val outputSlots = slots.filter { it.direction == RuleSlotDirection.OUTPUT }
     val attributeInputSlots = inputSlots.filter { it.sourceType == RuleSlotSourceType.ATTRIBUTE_INPUT }
     val toggleAnchorOptions = listOf("" to "仅在规则卡片显示") + attributeInputSlots.map {
-        it.key to it.name.ifBlank { it.key }
+        it.key to it.key
     }
-    val decoder = remember(expressionField.text, slots) {
-        decodeRuleWorkbenchExpression(
-            expression = expressionField.text,
-            slots = slots,
+    val scheduleSlotOptions = inputSlots.map { it.key to it.key }
+    val scheduleEventDateSlotOptions = slots.map { it.key to it.key }
+
+    LaunchedEffect(scheduleSlotOptions) {
+        val validKeys = scheduleSlotOptions.map { it.first }.toSet()
+        scheduleSlotKeys = scheduleSlotKeys.filter { it in validKeys }
+    }
+
+    fun syncExpressionFromCanvas(nodes: List<CanvasNode>) {
+        val positionedNodes = ensureRuleWorkbenchNodePositions(nodes)
+        val nextExpression = buildRuleWorkbenchExpression(positionedNodes)
+        expressionField = TextFieldValue(
+            text = nextExpression,
+            selection = TextRange(nextExpression.length),
+        )
+        canvasState = canvasState.copy(
+            nodes = positionedNodes,
+            connections = buildRuleWorkbenchConnections(positionedNodes),
+            selectedNodeId = canvasState.selectedNodeId.takeIf { selectedId ->
+                positionedNodes.any { it.id == selectedId }
+            },
         )
     }
-    val snippetGroups = remember(computationType, inputSlots, outputSlots) {
-        buildRuleWorkbenchSnippetGroups(
-            computationType = computationType,
-            inputSlots = inputSlots,
-            outputSlots = outputSlots,
+
+    fun syncCanvasFromExpression(text: String) {
+        val nextSlots = ensureRuleWorkbenchOperands(
+            expression = text,
+            existingOperands = slots,
+            retainUnreferenced = false,
+        )
+        if (nextSlots != slots) {
+            slots = nextSlots
+        }
+        val rebuiltState = buildRuleWorkbenchCanvasState(
+            expression = text,
+            slots = nextSlots,
+            selectedNodeId = canvasState.selectedNodeId,
+        )
+        canvasState = rebuiltState.copy(
+            scale = canvasState.scale,
+            offset = canvasState.offset,
         )
     }
 
@@ -2879,48 +3013,69 @@ private fun RuleWorkbenchPage(
         slots = slots.map { slot ->
             if (slot.id == slotId) transform(slot) else slot
         }
+        val updatedSlot = slots.firstOrNull { it.id == slotId }
+        val updatedDisplayText = updatedSlot?.let { slot ->
+            slot.key
+        }
+        val updatedNodes = canvasState.nodes.map { node ->
+            if (node.operandConfig?.id == slotId) {
+                node.copy(
+                    operandConfig = updatedSlot,
+                    displayText = updatedDisplayText,
+                )
+            } else {
+                node
+            }
+        }
+        syncExpressionFromCanvas(updatedNodes)
     }
 
-    fun addSlot(direction: RuleSlotDirection, sourceType: RuleSlotSourceType) {
-        val nextSlot = createRuleWorkbenchSlotDraft(
-            direction = direction,
-            sourceType = sourceType,
+    fun addOperand() {
+        val nextSlot = createRuleWorkbenchOperandDraft(
             existingSlots = slots,
         )
         slots = slots + nextSlot
-        expandedSlotIds = expandedSlotIds + nextSlot.id
+        val newNode = nextSlot.toOperandCanvasNode(nodeId = "operand_${canvasState.nodes.size}_${nextSlot.id}")
+        syncExpressionFromCanvas(canvasState.nodes + newNode)
     }
 
-    fun removeSlot(slotId: String) {
+    fun removeOperand(slotId: String) {
         val current = slots
-        if (current.size <= 1) return
         slots = current.filterNot { it.id == slotId }
-        expandedSlotIds = expandedSlotIds - slotId
+        syncExpressionFromCanvas(canvasState.nodes.filterNot { it.operandConfig?.id == slotId })
     }
 
-    fun toggleSlotExpansion(slotId: String) {
-        expandedSlotIds = if (slotId in expandedSlotIds) {
-            expandedSlotIds - slotId
-        } else {
-            expandedSlotIds + slotId
+    fun updateOperandInCanvas(slotId: String, updatedSlot: RuleSlotDraftUiModel) {
+        val previousKey = slots.firstOrNull { it.id == slotId }?.key
+        slots = slots.map { if (it.id == slotId) updatedSlot else it }
+        if (!previousKey.isNullOrBlank() && previousKey != updatedSlot.key) {
+            if (toggleAnchorSlotKey == previousKey) toggleAnchorSlotKey = updatedSlot.key
+            scheduleSlotKeys = scheduleSlotKeys.map { if (it == previousKey) updatedSlot.key else it }
+            if (scheduleEventDateSlotKey == previousKey) scheduleEventDateSlotKey = updatedSlot.key
         }
-    }
-
-    fun insertSnippet(snippet: RuleWorkbenchSnippetModel) {
-        val current = expressionField
-        val start = current.selection.start.coerceAtLeast(0)
-        val end = current.selection.end.coerceAtLeast(start)
-        val nextText = buildString {
-            append(current.text.substring(0, start))
-            append(snippet.fragment)
-            append(current.text.substring(end))
-        }
-        val cursor = (start + snippet.fragment.length - snippet.cursorOffsetFromEnd)
-            .coerceIn(0, nextText.length)
-        expressionField = TextFieldValue(
-            text = nextText,
-            selection = TextRange(cursor),
+        syncExpressionFromCanvas(
+            canvasState.nodes.map { node ->
+                if (node.operandConfig?.id == slotId) {
+                    node.copy(
+                        operandConfig = updatedSlot,
+                        displayText = updatedSlot.key,
+                    )
+                } else {
+                    node
+                }
+            }
         )
+    }
+
+    fun deleteCanvasNode(nodeId: String) {
+        val node = canvasState.nodes.firstOrNull { it.id == nodeId }
+        val remainingNodes = canvasState.nodes.filterNot { it.id == nodeId }
+        node?.operandConfig?.id?.let { operandId ->
+            if (remainingNodes.none { it.operandConfig?.id == operandId }) {
+                slots = slots.filterNot { it.id == operandId }
+            }
+        }
+        syncExpressionFromCanvas(remainingNodes)
     }
 
     LazyColumn(
@@ -2938,11 +3093,11 @@ private fun RuleWorkbenchPage(
                 icon = "rule",
                 title = if (name.isBlank()) "未命名规则" else name,
                 summary = buildString {
-                    append(draft.templateName?.let { "基于 $it" } ?: "自定义规则")
+                    append("自定义规则")
                     append(" · ")
-                    append("${inputSlots.size} 个输入变量")
+                    append("${inputSlots.size} 个输入操作数")
                     append(" / ")
-                    append("${outputSlots.size} 个结果变量")
+                    append("${outputSlots.size} 个输出操作数")
                 },
             )
         }
@@ -2962,33 +3117,34 @@ private fun RuleWorkbenchPage(
                     label = { Text("规则说明") },
                     minLines = 2,
                 )
-                EnumChipGroup(
-                    title = "规则类型",
-                    options = RuleComputationType.values().toList(),
-                    selected = computationType,
-                    label = { ruleComputationTypeLabel(it) },
-                    onSelected = { computationType = it },
-                )
-                if (!draft.templateName.isNullOrBlank()) {
-                    DetailLine("来源模板", draft.templateName)
-                }
-                DetailLine("运行时机", "当前编辑页先用默认触发时机，重点把变量和公式搭清楚。")
             }
         }
         item {
-            SectionCard(title = "运行方式") {
-                EnumChipGroup(
-                    title = "规则启用方式",
-                    options = RuleActivationMode.entries.toList(),
-                    selected = activationMode,
-                    label = { ruleActivationModeLabel(it) },
-                    onSelected = { activationMode = it },
+            SectionCard(title = "启用控制") {
+                FilterChip(
+                    selected = activationMode == RuleActivationMode.USER_TOGGLE,
+                    onClick = {
+                        activationMode = if (activationMode == RuleActivationMode.USER_TOGGLE) {
+                            RuleActivationMode.ALWAYS_ON
+                        } else {
+                            RuleActivationMode.USER_TOGGLE
+                        }
+                    },
+                    label = {
+                        Text(
+                            if (activationMode == RuleActivationMode.USER_TOGGLE) {
+                                "允许用户在物品页控制此规则"
+                            } else {
+                                "默认不向物品页暴露规则开关"
+                            }
+                        )
+                    },
                 )
                 Text(
                     text = if (activationMode == RuleActivationMode.ALWAYS_ON) {
-                        "始终运行的规则不会向用户暴露启停开关，适合始终生效的派生关系。"
+                        "当前规则启用后会默认参与计算，但不会在物品页属性下生成启停开关。"
                     } else {
-                        "用户开关控制适合“计入总价值 / 不计入总价值”这类业务动作。规则定义负责文案与默认状态，物品规则实例负责当前启停。"
+                        "适合“计入总价值 / 不计入总价值”“自动续费 / 暂停续费”这类业务动作。规则定义负责文案与默认状态，物品规则实例负责当前启停。"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3025,7 +3181,7 @@ private fun RuleWorkbenchPage(
                     )
                     if (attributeInputSlots.isEmpty()) {
                         Text(
-                            text = "当前还没有属性输入槽位，所以开关暂时只会显示在规则卡片里。",
+                            text = "当前还没有来自属性的输入操作数，所以开关暂时只会显示在规则卡片里。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -3034,90 +3190,207 @@ private fun RuleWorkbenchPage(
             }
         }
         item {
-            SectionCard(title = "变量管理") {
+            SectionCard(title = "周期调度") {
                 Text(
-                    text = "变量就是公式里能被引用的输入或结果。先添加变量，再把它们拼进公式里。",
+                    text = "启用后，规则会生成调度事件，并由后续运行器按日历规则执行。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilterChip(
-                        selected = false,
-                        onClick = { addSlot(RuleSlotDirection.INPUT, RuleSlotSourceType.ATTRIBUTE_INPUT) },
-                        label = { Text("属性输入") },
+                FilterChip(
+                    selected = isScheduledEnabled,
+                    onClick = { isScheduledEnabled = !isScheduledEnabled },
+                    label = { Text(if (isScheduledEnabled) "已启用周期调度" else "未启用周期调度") },
+                )
+                if (isScheduledEnabled) {
+                    EnumChipGroup(
+                        title = "调度时间来源",
+                        options = RuleScheduleTimeSourceType.entries.toList(),
+                        selected = scheduleTimeSourceType,
+                        label = {
+                            when (it) {
+                                RuleScheduleTimeSourceType.FIXED -> "固定值"
+                                RuleScheduleTimeSourceType.SLOT -> "来自操作数"
+                            }
+                        },
+                        onSelected = { scheduleTimeSourceType = it },
                     )
-                    FilterChip(
-                        selected = false,
-                        onClick = { addSlot(RuleSlotDirection.INPUT, RuleSlotSourceType.CONFIG_INPUT) },
-                        label = { Text("配置输入") },
+                    when (scheduleTimeSourceType) {
+                        RuleScheduleTimeSourceType.FIXED -> {
+                            OutlinedTextField(
+                                value = scheduleFixedValue,
+                                onValueChange = { scheduleFixedValue = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("固定调度值") },
+                                supportingText = { Text("例如：每月1日 / 每周一 / 09:00") },
+                                singleLine = true,
+                            )
+                        }
+                        RuleScheduleTimeSourceType.SLOT -> {
+                            if (scheduleSlotOptions.isEmpty()) {
+                                Text(
+                                    text = "当前还没有输入操作数，暂时无法读取调度时间。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                Text(
+                                    text = "选择哪些输入操作数用于推导周期调度时间。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    scheduleSlotOptions.forEach { option ->
+                                        FilterChip(
+                                            selected = option.first in scheduleSlotKeys,
+                                            onClick = {
+                                                scheduleSlotKeys = if (option.first in scheduleSlotKeys) {
+                                                    scheduleSlotKeys - option.first
+                                                } else {
+                                                    scheduleSlotKeys + option.first
+                                                }
+                                            },
+                                            label = { Text(option.second) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = scheduleDescription,
+                        onValueChange = { scheduleDescription = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("调度说明") },
+                        supportingText = { Text("用于补充说明调度如何被解释。") },
+                        minLines = 2,
                     )
-                    FilterChip(
-                        selected = false,
-                        onClick = { addSlot(RuleSlotDirection.INPUT, RuleSlotSourceType.SYSTEM_INPUT) },
-                        label = { Text("系统输入") },
+                    OutlinedTextField(
+                        value = scheduleEventTitleTemplate,
+                        onValueChange = { scheduleEventTitleTemplate = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("事件标题") },
+                        supportingText = { Text("例如：自动续费提醒") },
+                        singleLine = true,
                     )
-                    FilterChip(
-                        selected = false,
-                        onClick = { addSlot(RuleSlotDirection.OUTPUT, RuleSlotSourceType.ATTRIBUTE_OUTPUT) },
-                        label = { Text("结果变量") },
+                    if (scheduleEventDateSlotOptions.isNotEmpty()) {
+                        EnumChipGroup(
+                            title = "事件日期操作数",
+                            options = listOf("" to "不指定") + scheduleEventDateSlotOptions,
+                            selected = (listOf("" to "不指定") + scheduleEventDateSlotOptions)
+                                .firstOrNull { it.first == scheduleEventDateSlotKey }
+                                ?: (listOf("" to "不指定") + scheduleEventDateSlotOptions).first(),
+                            label = { it.second },
+                            onSelected = { option -> scheduleEventDateSlotKey = option.first },
+                        )
+                    }
+                    OutlinedTextField(
+                        value = scheduleEventDedupeKeyStrategy,
+                        onValueChange = { scheduleEventDedupeKeyStrategy = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("事件去重策略") },
+                        supportingText = { Text("例如：ruleId+billingDay") },
+                        singleLine = true,
                     )
                 }
-                DetailLine("当前结构", "${inputSlots.size} 个输入变量 / ${outputSlots.size} 个结果变量")
-                RuleWorkbenchVariableSection(
-                    title = "输入变量",
-                    description = "用于接收属性值、配置项或系统变量。",
-                    slots = inputSlots,
-                    expandedSlotIds = expandedSlotIds,
-                    systemVariableOptions = draft.systemVariableOptions,
-                    onToggleExpansion = ::toggleSlotExpansion,
-                    onUpdateSlot = ::updateSlot,
-                    onRemoveSlot = ::removeSlot,
-                )
-                RuleWorkbenchVariableSection(
-                    title = "结果变量",
-                    description = "用于声明计算结果写回到属性、只读结果或系统变量。",
-                    slots = outputSlots,
-                    expandedSlotIds = expandedSlotIds,
-                    systemVariableOptions = draft.systemVariableOptions,
-                    onToggleExpansion = ::toggleSlotExpansion,
-                    onUpdateSlot = ::updateSlot,
-                    onRemoveSlot = ::removeSlot,
-                )
             }
         }
         item {
-            SectionCard(title = "公式编辑器") {
+            SectionCard(title = "公式画布") {
                 Text(
-                    text = "光标放到表达式里后，点击下面的变量、运算片段或函数模板，会直接插入到当前位置。",
+                    text = "从素材栏选择操作数、运算符、函数或分组符加入画布；点击操作数节点可配置方向、值来源和说明。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                RuleWorkbenchExpressionPreview(
-                    outputSlots = outputSlots,
-                    expression = expressionField.text,
-                    referencedVariables = decoder.knownVariableReferences,
+                DetailTextBlock("当前画布", "${slots.size} 个操作数（${inputSlots.size} 输入 / ${outputSlots.size} 输出）")
+                RuleCanvasWorkbenchPanel(
+                    canvasState = canvasState,
+                    onCanvasNodesChange = ::syncExpressionFromCanvas,
+                    onViewportChange = { scale, offset ->
+                        canvasState = canvasState.copy(scale = scale, offset = offset)
+                    },
+                    onPaletteItemSelected = { item ->
+                        when (item) {
+                            PaletteItem.Operand -> addOperand()
+                            is PaletteItem.Operator -> {
+                                syncExpressionFromCanvas(
+                                    canvasState.nodes + CanvasNode(
+                                        type = CanvasNodeType.OPERATOR,
+                                        position = Offset.Zero,
+                                        operatorSymbol = item.symbol,
+                                        displayText = item.label,
+                                    )
+                                )
+                            }
+                            is PaletteItem.Function -> {
+                                syncExpressionFromCanvas(
+                                    canvasState.nodes + listOf(
+                                        CanvasNode(
+                                            type = CanvasNodeType.FUNCTION,
+                                            position = Offset.Zero,
+                                            functionName = item.name,
+                                            displayText = item.label,
+                                        ),
+                                        CanvasNode(
+                                            type = CanvasNodeType.GROUPING,
+                                            position = Offset.Zero,
+                                            groupingSymbol = "(",
+                                            displayText = "(",
+                                        ),
+                                        CanvasNode(
+                                            type = CanvasNodeType.GROUPING,
+                                            position = Offset.Zero,
+                                            groupingSymbol = ")",
+                                            displayText = ")",
+                                        ),
+                                    )
+                                )
+                            }
+                            is PaletteItem.Grouping -> {
+                                syncExpressionFromCanvas(
+                                    canvasState.nodes + CanvasNode(
+                                        type = CanvasNodeType.GROUPING,
+                                        position = Offset.Zero,
+                                        groupingSymbol = item.symbol,
+                                        displayText = item.label,
+                                    )
+                                )
+                            }
+                        }
+                    },
+                    onNodeSelected = { nodeId ->
+                        canvasState = canvasState.copy(selectedNodeId = nodeId)
+                        val node = canvasState.nodes.find { it.id == nodeId }
+                        if (node?.type == CanvasNodeType.OPERAND && node.operandConfig != null) {
+                            showOperandConfigDialog = node.operandConfig.id
+                        }
+                    },
+                    onNodeDeleted = ::deleteCanvasNode,
+                    onToggleFullscreen = { isCanvasFullscreen = true },
+                    isFullscreen = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(9f / 16f),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "公式编码",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 OutlinedTextField(
                     value = expressionField,
-                    onValueChange = { expressionField = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("表达式") },
-                    supportingText = {
-                        Text("支持变量、四则、比较、逻辑、if(cond,a,b)、coalesce、dateDiff、cycleCount。")
+                    onValueChange = {
+                        expressionField = it
+                        syncCanvasFromExpression(it.text)
                     },
-                    minLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("公式编码") },
+                    minLines = 3,
                 )
-                snippetGroups.forEach { group ->
-                    RuleWorkbenchSnippetGroup(
-                        title = group.title,
-                        snippets = group.snippets,
-                        onSnippetClick = ::insertSnippet,
-                    )
-                }
-                RuleWorkbenchDecoderCard(decoder = decoder)
             }
         }
         item {
@@ -3125,7 +3398,7 @@ private fun RuleWorkbenchPage(
                 title = draft.saveButtonText,
                 description = buildString {
                     append(if (draft.isEditMode) "保存当前规则修改。" else "创建新的规则定义。")
-                    append(" 当前已配置 ${inputSlots.size} 个输入变量，${outputSlots.size} 个结果变量。")
+                    append(" 当前已配置 ${slots.size} 个操作数，其中 ${inputSlots.size} 个输入、${outputSlots.size} 个输出。")
                 },
                 actionLabel = draft.saveButtonText,
                 onClick = {
@@ -3140,10 +3413,117 @@ private fun RuleWorkbenchPage(
                             toggleLabelWhenDisabled = toggleLabelWhenDisabled,
                             toggleAnchorSlotKey = toggleAnchorSlotKey,
                             toggleDefaultEnabled = toggleDefaultEnabled,
+                            isScheduledEnabled = isScheduledEnabled,
+                            scheduleSourceMode = when (scheduleTimeSourceType) {
+                                RuleScheduleTimeSourceType.FIXED -> RuleScheduleSourceMode.MANUAL_CALENDAR_RULE
+                                RuleScheduleTimeSourceType.SLOT -> RuleScheduleSourceMode.SLOT_DRIVEN
+                            },
+                            scheduleTimeSourceType = scheduleTimeSourceType,
+                            scheduleFixedValue = scheduleFixedValue,
+                            scheduleSlotKeys = scheduleSlotKeys,
+                            scheduleDescription = scheduleDescription,
+                            manualScheduleRule = draft.manualScheduleRule,
+                            slotDrivenScheduleConfig = draft.slotDrivenScheduleConfig,
+                            generateCalendarEvent = generateCalendarEvent,
+                            scheduleEventTitleTemplate = scheduleEventTitleTemplate,
+                            scheduleEventDateSlotKey = scheduleEventDateSlotKey,
+                            scheduleEventDedupeKeyStrategy = scheduleEventDedupeKeyStrategy,
+                            canvasDefinition = buildRuleWorkbenchCanvasDefinition(canvasState.nodes),
                             slots = slots,
                             expression = expressionField.text,
                         )
                     )
+                },
+            )
+        }
+    }
+
+    if (isCanvasFullscreen) {
+        BackHandler { isCanvasFullscreen = false }
+        Dialog(
+            onDismissRequest = { isCanvasFullscreen = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnClickOutside = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    val rotateCanvas = maxHeight > maxWidth
+                    val fullscreenCanvasWidth = if (rotateCanvas) maxHeight else maxWidth
+                    val fullscreenCanvasHeight = if (rotateCanvas) maxWidth else maxHeight
+
+                    Box(
+                        modifier = Modifier
+                            .requiredSize(
+                                width = fullscreenCanvasWidth,
+                                height = fullscreenCanvasHeight,
+                            )
+                            .align(Alignment.Center)
+                            .graphicsLayer {
+                                rotationZ = if (rotateCanvas) 90f else 0f
+                            },
+                    ) {
+                        DraggableRuleCanvas(
+                            canvasState = canvasState,
+                            onNodesChange = ::syncExpressionFromCanvas,
+                            onViewportChange = { scale, offset ->
+                                canvasState = canvasState.copy(scale = scale, offset = offset)
+                            },
+                            onNodeSelected = { nodeId ->
+                                canvasState = canvasState.copy(selectedNodeId = nodeId)
+                                val node = canvasState.nodes.find { it.id == nodeId }
+                                if (node?.type == CanvasNodeType.OPERAND && node.operandConfig != null) {
+                                    showOperandConfigDialog = node.operandConfig.id
+                                }
+                            },
+                            onNodeDeleted = ::deleteCanvasNode,
+                            onToggleFullscreen = { isCanvasFullscreen = false },
+                            isFullscreen = true,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(12.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        ) {
+                            IconButton(
+                                onClick = { isCanvasFullscreen = false },
+                                modifier = Modifier.size(48.dp),
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回规则页")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 操作数配置弹窗
+    showOperandConfigDialog?.let { slotId ->
+        val slot = slots.find { it.id == slotId }
+        if (slot != null) {
+            OperandConfigDialog(
+                slot = slot,
+                systemVariableOptions = draft.systemVariableOptions,
+                onDismiss = { showOperandConfigDialog = null },
+                onSave = { updatedSlot ->
+                    updateOperandInCanvas(slotId, updatedSlot)
+                    showOperandConfigDialog = null
+                },
+                onDelete = {
+                    removeOperand(slotId)
+                    showOperandConfigDialog = null
                 },
             )
         }
@@ -3193,6 +3573,553 @@ private fun RuleWorkbenchVariableSection(
         }
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RuleCanvasBoard(
+    slots: List<RuleSlotDraftUiModel>,
+    decoder: RuleWorkbenchDecoderModel,
+    onSlotClick: (String) -> Unit,
+) {
+    if (slots.isEmpty()) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
+        ) {
+            Text(
+                text = "画布还没有槽位。先从上方素材栏加入空输入槽位或空输出槽位。",
+                modifier = Modifier.padding(14.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.26f),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = "规则画布",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            RuleCanvasLane(
+                title = "输入槽位",
+                subtitle = "来自属性、系统变量或固定值",
+                slots = slots.filter { it.direction == RuleSlotDirection.INPUT },
+                onSlotClick = onSlotClick,
+            )
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.26f),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "公式轨道",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    RuleCanvasFormulaTrack(decoder = decoder)
+                }
+            }
+            RuleCanvasLane(
+                title = "输出槽位",
+                subtitle = "规则最终写回的位置",
+                slots = slots.filter { it.direction == RuleSlotDirection.OUTPUT },
+                onSlotClick = onSlotClick,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RuleCanvasFormulaTrack(
+    decoder: RuleWorkbenchDecoderModel,
+) {
+    val tokenScrollState = rememberScrollState()
+    if (decoder.tokens.isEmpty()) {
+        Text(
+            text = "还没有公式，可以先从上方工具箱点入变量、运算符或函数片段。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(tokenScrollState),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        decoder.tokens.forEach { token ->
+            RuleCanvasFormulaTokenChip(token = token)
+        }
+    }
+}
+
+@Composable
+private fun RuleCanvasFormulaTokenChip(
+    token: RuleWorkbenchTokenModel,
+) {
+    val containerColor = when (token.kind) {
+        RuleWorkbenchTokenKind.VARIABLE -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f)
+        RuleWorkbenchTokenKind.FUNCTION -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.75f)
+        RuleWorkbenchTokenKind.LITERAL -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+        RuleWorkbenchTokenKind.SYMBOL -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
+        RuleWorkbenchTokenKind.UNKNOWN -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f)
+    }
+    val label = when (token.kind) {
+        RuleWorkbenchTokenKind.VARIABLE -> "槽位"
+        RuleWorkbenchTokenKind.FUNCTION -> "函数"
+        RuleWorkbenchTokenKind.LITERAL -> "值"
+        RuleWorkbenchTokenKind.SYMBOL -> "符号"
+        RuleWorkbenchTokenKind.UNKNOWN -> "待修正"
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = containerColor,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = token.text,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RuleCanvasLane(
+    title: String,
+    subtitle: String,
+    slots: List<RuleSlotDraftUiModel>,
+    onSlotClick: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (slots.isEmpty()) {
+            Text(
+                text = "当前还没有槽位。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                slots.forEach { slot ->
+                    RuleCanvasSlotChip(
+                        slot = slot,
+                        isSelected = false,
+                        onClick = { onSlotClick(slot.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuleCanvasSlotChip(
+    slot: RuleSlotDraftUiModel,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    val isIncomplete = slot.key.isBlank()
+    val containerColor = when {
+        isIncomplete -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+        slot.direction == RuleSlotDirection.OUTPUT -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+        slot.sourceType == RuleSlotSourceType.SYSTEM_INPUT || slot.sourceType == RuleSlotSourceType.SYSTEM_OUTPUT ->
+            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
+        slot.sourceType == RuleSlotSourceType.CONFIG_INPUT ->
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+    }
+    val borderLabel = when {
+        isIncomplete -> "待完善"
+        slot.direction == RuleSlotDirection.OUTPUT -> "输出"
+        slot.sourceType == RuleSlotSourceType.SYSTEM_INPUT || slot.sourceType == RuleSlotSourceType.SYSTEM_OUTPUT -> "系统"
+        slot.sourceType == RuleSlotSourceType.CONFIG_INPUT -> "固定值"
+        else -> "外部输入"
+    }
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        } else {
+            containerColor
+        },
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = slot.key.ifBlank { "未命名槽位" },
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = buildString {
+                    append(borderLabel)
+                    if (isSelected) append(" · 当前选中")
+                    append(" · ${ruleSlotValueTypeLabel(slot.valueType)}")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun buildRuleWorkbenchCanvasState(
+    expression: String,
+    slots: List<RuleSlotDraftUiModel>,
+    selectedNodeId: String? = null,
+    canvasDefinition: RuleCanvasDefinition? = null,
+    existingNodes: List<CanvasNode> = emptyList(),
+): CanvasState {
+    val nodes = buildRuleWorkbenchCanvasNodes(
+        expression = expression,
+        slots = slots,
+        canvasDefinition = canvasDefinition,
+        existingNodes = existingNodes,
+    )
+    return CanvasState(
+        nodes = nodes,
+        connections = buildRuleWorkbenchConnections(nodes),
+        selectedNodeId = selectedNodeId.takeIf { candidate -> nodes.any { it.id == candidate } },
+    )
+}
+
+private fun buildRuleWorkbenchCanvasNodes(
+    expression: String,
+    slots: List<RuleSlotDraftUiModel>,
+    canvasDefinition: RuleCanvasDefinition? = null,
+    existingNodes: List<CanvasNode> = emptyList(),
+): List<CanvasNode> {
+    val operandMap = slots.associateBy { it.key.trim() }
+    val parsedNodes = if (expression.isBlank()) {
+        emptyList()
+    } else {
+        val tokens = lexRuleWorkbenchExpression(expression)
+        tokens.mapIndexed { index, token ->
+            when (token.type) {
+                RuleWorkbenchLexTokenType.IDENTIFIER -> {
+                    val nextToken = tokens.getOrNull(index + 1)
+                    if (token.text.lowercase(Locale.ROOT) in RuleWorkbenchLiteralKeywords) {
+                        CanvasNode(
+                            id = "literal_${index}_${token.text}",
+                            type = CanvasNodeType.LITERAL,
+                            position = Offset.Zero,
+                            literalValue = token.text,
+                            displayText = token.text,
+                        )
+                    } else if (nextToken?.text == "(") {
+                        CanvasNode(
+                            id = "func_${index}_${token.text}",
+                            type = CanvasNodeType.FUNCTION,
+                            position = Offset.Zero,
+                            functionName = token.text,
+                            displayText = token.text,
+                        )
+                    } else {
+                        operandMap[token.text]?.toOperandCanvasNode(nodeId = "operand_${index}_${token.text}") ?: CanvasNode(
+                            id = "operand_${index}_${token.text}",
+                            type = CanvasNodeType.OPERAND,
+                            position = Offset.Zero,
+                            operandConfig = null,
+                            displayText = token.text,
+                        )
+                    }
+                }
+                RuleWorkbenchLexTokenType.NUMBER,
+                RuleWorkbenchLexTokenType.STRING -> CanvasNode(
+                    id = "literal_${index}_${token.text.hashCode()}",
+                    type = CanvasNodeType.LITERAL,
+                    position = Offset.Zero,
+                    literalValue = token.text,
+                    displayText = token.text,
+                )
+                RuleWorkbenchLexTokenType.SYMBOL -> if (token.text in RuleWorkbenchGroupingSymbols) {
+                    CanvasNode(
+                        id = "group_${index}_${token.text.hashCode()}",
+                        type = CanvasNodeType.GROUPING,
+                        position = Offset.Zero,
+                        groupingSymbol = token.text,
+                        displayText = token.text,
+                    )
+                } else {
+                    CanvasNode(
+                        id = "op_${index}_${token.text.hashCode()}",
+                        type = CanvasNodeType.OPERATOR,
+                        position = Offset.Zero,
+                        operatorSymbol = token.text,
+                        displayText = token.text,
+                    )
+                }
+            }
+        }
+    }
+
+    val remainingExistingNodes = existingNodes.toMutableList()
+    val restoredNodes = parsedNodes.mapIndexed { index, parsedNode ->
+        val matchingIndex = remainingExistingNodes.indexOfFirst { existingNode ->
+            existingNode.ruleWorkbenchNodeToken() == parsedNode.ruleWorkbenchNodeToken()
+        }
+        if (matchingIndex >= 0) {
+            val existingNode = remainingExistingNodes.removeAt(matchingIndex)
+            parsedNode.copy(id = existingNode.id, position = existingNode.position)
+        } else {
+            val persistedNode = canvasDefinition?.nodes?.getOrNull(index)
+            val persistedPosition = if (persistedNode?.x != null && persistedNode.y != null) {
+                Offset(persistedNode.x, persistedNode.y)
+            } else {
+                null
+            }
+            parsedNode.copy(position = persistedPosition ?: Offset.Zero)
+        }
+    }
+    return ensureRuleWorkbenchNodePositions(restoredNodes)
+}
+
+private fun buildRuleWorkbenchExpression(nodes: List<CanvasNode>): String {
+    val tokens = orderRuleWorkbenchNodes(nodes).mapNotNull { node ->
+        when (node.type) {
+            CanvasNodeType.OPERAND -> node.operandConfig?.key?.trim()?.takeIf { it.isNotBlank() }
+                ?: node.displayText?.trim()?.takeIf { it.isNotBlank() }
+            CanvasNodeType.OPERATOR -> node.operatorSymbol?.trim()?.takeIf { it.isNotBlank() }
+                ?: node.displayText?.trim()?.takeIf { it.isNotBlank() }
+            CanvasNodeType.FUNCTION -> node.functionName?.trim()?.takeIf { it.isNotBlank() }
+                ?: node.displayText?.trim()?.takeIf { it.isNotBlank() }
+            CanvasNodeType.GROUPING -> node.groupingSymbol?.trim()?.takeIf { it.isNotBlank() }
+                ?: node.displayText?.trim()?.takeIf { it.isNotBlank() }
+            CanvasNodeType.LITERAL -> node.literalValue?.trim()?.takeIf { it.isNotBlank() }
+                ?: node.displayText?.trim()?.takeIf { it.isNotBlank() }
+        }
+    }
+    if (tokens.isEmpty()) return ""
+    return buildString {
+        tokens.forEachIndexed { index, token ->
+            if (index > 0 && needsRuleWorkbenchSpace(tokens[index - 1], token)) {
+                append(' ')
+            }
+            append(token)
+        }
+    }
+}
+
+private fun needsRuleWorkbenchSpace(previous: String, current: String): Boolean {
+    if (previous in setOf("(", "{", "[")) return false
+    if (current in setOf(")", "}", "]", ",")) return false
+    if (current in setOf("(", "{", "[")) return false
+    if (previous == ",") return true
+    if (previous.any { it.isLetterOrDigit() || it == '_' } && current.any { it.isLetterOrDigit() || it == '_' }) {
+        return true
+    }
+    return true
+}
+
+private fun buildRuleWorkbenchConnections(nodes: List<CanvasNode>): List<CanvasConnection> {
+    return orderRuleWorkbenchNodes(nodes).map { it.id }.zipWithNext { fromId, toId ->
+        CanvasConnection(fromNodeId = fromId, toNodeId = toId)
+    }
+}
+
+private fun ensureRuleWorkbenchNodePositions(nodes: List<CanvasNode>): List<CanvasNode> {
+    val positionedNodes = nodes.filter { it.position != Offset.Zero }
+    val lastPositionedNode = orderRuleWorkbenchNodes(positionedNodes).lastOrNull()
+    var nextX = lastPositionedNode?.let {
+        it.position.x + it.widthDp() + RULE_CANVAS_NODE_GAP_DP
+    } ?: 48f
+    var nextY = lastPositionedNode?.position?.y ?: 48f
+
+    return nodes.map { node ->
+        if (node.position != Offset.Zero) {
+            node
+        } else {
+            if (nextX + node.widthDp() > RULE_CANVAS_WIDTH_DP - RULE_CANVAS_PADDING_DP) {
+                nextX = 48f
+                nextY += RULE_CANVAS_NODE_HEIGHT_DP + 24f
+            }
+            val positionedNode = node.copy(position = Offset(nextX, nextY))
+            nextX += node.widthDp() + RULE_CANVAS_NODE_GAP_DP
+            positionedNode
+        }
+    }
+}
+
+private fun orderRuleWorkbenchNodes(nodes: List<CanvasNode>): List<CanvasNode> {
+    val remaining = nodes.sortedWith(compareBy<CanvasNode> { it.position.y }.thenBy { it.position.x }).toMutableList()
+    val ordered = mutableListOf<CanvasNode>()
+    while (remaining.isNotEmpty()) {
+        val rowAnchorY = remaining.first().position.y
+        val rowNodes = remaining
+            .filter { abs(it.position.y - rowAnchorY) <= RULE_CANVAS_NODE_HEIGHT_DP / 2f }
+            .sortedBy { it.position.x }
+        ordered += rowNodes
+        remaining.removeAll(rowNodes.toSet())
+    }
+    return ordered
+}
+
+private fun CanvasNode.ruleWorkbenchNodeToken(): String = when (type) {
+    CanvasNodeType.OPERAND -> "operand:${operandConfig?.key ?: displayText.orEmpty()}"
+    CanvasNodeType.OPERATOR -> "operator:${operatorSymbol ?: displayText.orEmpty()}"
+    CanvasNodeType.FUNCTION -> "function:${functionName ?: displayText.orEmpty()}"
+    CanvasNodeType.GROUPING -> "grouping:${groupingSymbol ?: displayText.orEmpty()}"
+    CanvasNodeType.LITERAL -> "literal:${literalValue ?: displayText.orEmpty()}"
+}
+
+private fun buildRuleWorkbenchCanvasDefinition(
+    nodes: List<CanvasNode>,
+): RuleCanvasDefinition {
+    val orderedNodes = orderRuleWorkbenchNodes(nodes)
+    val canvasNodes = orderedNodes.mapIndexed { index, node ->
+        when (node.type) {
+            CanvasNodeType.OPERAND -> {
+                val slot = node.operandConfig
+                RuleCanvasNode(
+                    id = node.id,
+                    type = RuleCanvasNodeType.SLOT,
+                    row = node.position.y.roundToInt(),
+                    column = index,
+                    x = node.position.x,
+                    y = node.position.y,
+                    label = slot?.key ?: node.displayText.orEmpty(),
+                    slotConfig = slot?.let {
+                        RuleCanvasSlotConfig(
+                            slotKey = it.key.ifBlank { null },
+                            displayName = it.key,
+                            direction = it.direction,
+                            valueType = it.valueType,
+                            valueSource = when (it.sourceType) {
+                                RuleSlotSourceType.SYSTEM_INPUT,
+                                RuleSlotSourceType.SYSTEM_OUTPUT -> RuleCanvasSlotValueSource.SYSTEM_VARIABLE
+                                RuleSlotSourceType.CONFIG_INPUT -> RuleCanvasSlotValueSource.FIXED_VALUE
+                                else -> RuleCanvasSlotValueSource.EXTERNAL_INPUT
+                            },
+                            systemVariableKey = findSystemVariableKeyOrNull(it.systemVariableKey),
+                            fixedValue = it.configValue.takeIf { value -> value.isNotBlank() },
+                            isRequired = it.isRequired,
+                            description = it.description.ifBlank { null },
+                        )
+                    },
+                    isPlaceholder = slot == null || slot.key.isBlank(),
+                    styleHint = when {
+                        slot == null || slot.key.isBlank() -> RuleCanvasNodeStyleHint.NEEDS_CONFIGURATION
+                        slot.direction == RuleSlotDirection.OUTPUT -> RuleCanvasNodeStyleHint.OUTPUT_SLOT
+                        slot.sourceType == RuleSlotSourceType.SYSTEM_INPUT || slot.sourceType == RuleSlotSourceType.SYSTEM_OUTPUT ->
+                            RuleCanvasNodeStyleHint.SYSTEM_SOURCE
+                        slot.sourceType == RuleSlotSourceType.CONFIG_INPUT -> RuleCanvasNodeStyleHint.FIXED_VALUE
+                        else -> RuleCanvasNodeStyleHint.INPUT_SLOT
+                    },
+                )
+            }
+            CanvasNodeType.OPERATOR -> RuleCanvasNode(
+                id = node.id,
+                type = RuleCanvasNodeType.OPERATOR,
+                row = node.position.y.roundToInt(),
+                column = index,
+                x = node.position.x,
+                y = node.position.y,
+                label = node.operatorSymbol ?: node.displayText.orEmpty(),
+                operatorKey = node.operatorSymbol,
+                styleHint = RuleCanvasNodeStyleHint.DEFAULT,
+            )
+            CanvasNodeType.FUNCTION -> RuleCanvasNode(
+                id = node.id,
+                type = RuleCanvasNodeType.FUNCTION,
+                row = node.position.y.roundToInt(),
+                column = index,
+                x = node.position.x,
+                y = node.position.y,
+                label = node.functionName ?: node.displayText.orEmpty(),
+                functionKey = node.functionName,
+                styleHint = RuleCanvasNodeStyleHint.DEFAULT,
+            )
+            CanvasNodeType.GROUPING -> RuleCanvasNode(
+                id = node.id,
+                type = RuleCanvasNodeType.OPERATOR,
+                row = node.position.y.roundToInt(),
+                column = index,
+                x = node.position.x,
+                y = node.position.y,
+                label = node.groupingSymbol ?: node.displayText.orEmpty(),
+                operatorKey = node.groupingSymbol,
+                styleHint = RuleCanvasNodeStyleHint.DEFAULT,
+            )
+            CanvasNodeType.LITERAL -> RuleCanvasNode(
+                id = node.id,
+                type = RuleCanvasNodeType.LITERAL,
+                row = node.position.y.roundToInt(),
+                column = index,
+                x = node.position.x,
+                y = node.position.y,
+                label = node.literalValue ?: node.displayText.orEmpty(),
+                literalValue = node.literalValue,
+                literalValueType = RuleSlotValueType.TEXT,
+                styleHint = RuleCanvasNodeStyleHint.FIXED_VALUE,
+            )
+        }
+    }
+    return RuleCanvasDefinition(
+        version = 2,
+        layoutMode = RuleCanvasLayoutMode.FLOW_ROW,
+        nodes = canvasNodes,
+        connections = buildRuleWorkbenchConnections(orderedNodes).map { connection ->
+            RuleCanvasConnection(fromNodeId = connection.fromNodeId, toNodeId = connection.toNodeId)
+        },
+    )
+}
+
+private fun RuleSlotDraftUiModel.toOperandCanvasNode(
+    nodeId: String = id,
+): CanvasNode {
+    return CanvasNode(
+        id = nodeId,
+        type = CanvasNodeType.OPERAND,
+        position = Offset.Zero,
+        operandConfig = this,
+        displayText = key,
+    )
+}
+
+private fun findSystemVariableKeyOrNull(storageKey: String) = findSystemVariableKey(storageKey)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -3609,6 +4536,41 @@ private fun RuleWorkbenchDecoderCard(
     }
 }
 
+@Composable
+private fun RuleCanvasWorkbenchPanel(
+    canvasState: CanvasState,
+    onCanvasNodesChange: (List<CanvasNode>) -> Unit,
+    onViewportChange: (scale: Float, offset: Offset) -> Unit,
+    onPaletteItemSelected: (PaletteItem) -> Unit,
+    onNodeSelected: (String) -> Unit,
+    onNodeDeleted: (String) -> Unit,
+    onToggleFullscreen: () -> Unit,
+    isFullscreen: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        RuleCanvasPalette(
+            onPaletteItemSelected = onPaletteItemSelected,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        DraggableRuleCanvas(
+            canvasState = canvasState,
+            onNodesChange = onCanvasNodesChange,
+            onViewportChange = onViewportChange,
+            onNodeSelected = onNodeSelected,
+            onNodeDeleted = onNodeDeleted,
+            onToggleFullscreen = onToggleFullscreen,
+            isFullscreen = isFullscreen,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        )
+    }
+}
+
 private data class RuleWorkbenchSnippetGroupModel(
     val title: String,
     val snippets: List<RuleWorkbenchSnippetModel>,
@@ -3654,6 +4616,69 @@ private enum class RuleWorkbenchLexTokenType {
     SYMBOL,
 }
 
+private val RuleWorkbenchGroupingSymbols = setOf("(", ")", "{", "}", "[", "]")
+private val RuleWorkbenchLiteralKeywords = setOf("true", "false", "null")
+
+private fun ensureRuleWorkbenchOperands(
+    expression: String,
+    existingOperands: List<RuleSlotDraftUiModel>,
+    retainUnreferenced: Boolean = true,
+): List<RuleSlotDraftUiModel> {
+    val tokens = lexRuleWorkbenchExpression(expression)
+    val referencedNames = tokens
+        .mapIndexedNotNull { index, token ->
+            if (token.type != RuleWorkbenchLexTokenType.IDENTIFIER) return@mapIndexedNotNull null
+            if (tokens.getOrNull(index + 1)?.text == "(") {
+                return@mapIndexedNotNull null
+            }
+            token.text.takeUnless { it.lowercase(Locale.ROOT) in RuleWorkbenchLiteralKeywords }
+        }
+        .distinct()
+    if (referencedNames.isEmpty()) {
+        return if (retainUnreferenced) existingOperands else emptyList()
+    }
+
+    var result = if (retainUnreferenced) {
+        existingOperands
+    } else {
+        existingOperands.filter { it.key in referencedNames }
+    }
+    referencedNames.forEach { name ->
+        if (result.none { it.key == name }) {
+            result = result + createRuleWorkbenchOperandDraft(
+                existingSlots = result,
+                preferredName = name,
+            )
+        }
+    }
+    return result
+}
+
+private fun createRuleWorkbenchOperandDraft(
+    existingSlots: List<RuleSlotDraftUiModel>,
+    preferredName: String? = null,
+): RuleSlotDraftUiModel {
+    val existingKeys = existingSlots.map { it.key.trim() }.filter { it.isNotBlank() }.toSet()
+    var index = 1
+    var operandName = preferredName?.trim().orEmpty()
+    if (operandName.isBlank()) {
+        operandName = "操作数$index"
+        while (operandName in existingKeys) {
+            index += 1
+            operandName = "操作数$index"
+        }
+    }
+    return createRuleWorkbenchSlotDraft(
+        direction = RuleSlotDirection.INPUT,
+        sourceType = RuleSlotSourceType.ATTRIBUTE_INPUT,
+        existingSlots = existingSlots,
+    ).copy(
+        id = "rule_workbench_operand_${System.nanoTime()}",
+        key = operandName,
+        name = operandName,
+    )
+}
+
 private fun createRuleWorkbenchSlotDraft(
     direction: RuleSlotDirection,
     sourceType: RuleSlotSourceType,
@@ -3663,8 +4688,6 @@ private fun createRuleWorkbenchSlotDraft(
         .firstOrNull { it == sourceType }
         ?: defaultSourceTypeForDirection(direction)
     val existingKeys = existingSlots.map { it.key.trim() }.filter { it.isNotBlank() }.toSet()
-    val key = nextRuleWorkbenchSlotKey(normalizedSource, existingKeys)
-    val sameTypeIndex = existingSlots.count { it.direction == direction && it.sourceType == normalizedSource } + 1
     val namePrefix = when (normalizedSource) {
         RuleSlotSourceType.ATTRIBUTE_INPUT -> "属性输入"
         RuleSlotSourceType.CONFIG_INPUT -> "配置输入"
@@ -3673,37 +4696,22 @@ private fun createRuleWorkbenchSlotDraft(
         RuleSlotSourceType.READONLY_OUTPUT -> "只读结果"
         RuleSlotSourceType.SYSTEM_OUTPUT -> "系统输出"
     }
+    var sameTypeIndex = 1
+    var variableName = "$namePrefix$sameTypeIndex"
+    while (variableName in existingKeys) {
+        sameTypeIndex += 1
+        variableName = "$namePrefix$sameTypeIndex"
+    }
     return RuleSlotDraftUiModel(
         id = "rule_workbench_slot_${System.nanoTime()}_${direction.name.lowercase()}",
-        key = key,
-        name = "$namePrefix$sameTypeIndex",
+        key = variableName,
+        name = variableName,
         direction = direction,
         sourceType = normalizedSource,
         isRequired = direction == RuleSlotDirection.INPUT,
         allowQuickCreateAttribute = normalizedSource == RuleSlotSourceType.ATTRIBUTE_INPUT,
         outputTargetType = defaultOutputTargetType(normalizedSource),
     )
-}
-
-private fun nextRuleWorkbenchSlotKey(
-    sourceType: RuleSlotSourceType,
-    existingKeys: Set<String>,
-): String {
-    val prefix = when (sourceType) {
-        RuleSlotSourceType.ATTRIBUTE_INPUT -> "attr"
-        RuleSlotSourceType.CONFIG_INPUT -> "config"
-        RuleSlotSourceType.SYSTEM_INPUT -> "system"
-        RuleSlotSourceType.ATTRIBUTE_OUTPUT -> "result"
-        RuleSlotSourceType.READONLY_OUTPUT -> "preview"
-        RuleSlotSourceType.SYSTEM_OUTPUT -> "systemOut"
-    }
-    var index = 1
-    var candidate = "${prefix}${index}"
-    while (candidate in existingKeys) {
-        index += 1
-        candidate = "${prefix}${index}"
-    }
-    return candidate
 }
 
 private fun buildRuleWorkbenchSnippetGroups(
@@ -3805,7 +4813,7 @@ private fun buildRuleWorkbenchSnippetGroups(
             },
         ),
         RuleWorkbenchSnippetGroupModel(
-            title = "函数模板",
+            title = "函数片段",
             snippets = listOf(
                 RuleWorkbenchSnippetModel("if", "if($firstBoolean, $firstInput, $secondInput)"),
                 RuleWorkbenchSnippetModel("coalesce", "coalesce($firstInput, $secondInput)"),
@@ -3880,7 +4888,7 @@ private fun decodeRuleWorkbenchExpression(
 
     val warnings = mutableListOf<String>()
     if (expression.isBlank()) {
-        warnings += "还没有公式，可以先点上面的变量或函数模板开始拼装。"
+        warnings += "还没有公式，可以先点上面的变量或函数片段开始拼装。"
     }
     if (slots.none { it.direction == RuleSlotDirection.OUTPUT }) {
         warnings += "还没有结果变量，规则结果暂时没有落点。"
@@ -4089,6 +5097,83 @@ private fun DetailLine(
 }
 
 @Composable
+private fun DetailTextBlock(
+    label: String,
+    value: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private fun buildAttributePropertySummaryForEditor(
+    valueType: AttributeValueType,
+    valueSource: AttributeValueSource,
+    numberFormat: AttributeNumberFormat,
+    unitCategory: String,
+    defaultUnit: String,
+    decimalPlacesText: String,
+    allowNegative: Boolean,
+    booleanInputMode: AttributeInputMode,
+    trueLabel: String,
+    falseLabel: String,
+    optionItemsText: String,
+    isMultiSelect: Boolean,
+    systemVariableLabel: String?,
+    defaultValue: String,
+): String {
+    val segments = mutableListOf<String>()
+    when (valueType) {
+        AttributeValueType.TEXT -> segments += "文本"
+        AttributeValueType.NUMBER -> {
+            segments += "格式：${attributeNumberFormatLabel(numberFormat)}"
+            if (numberFormat == AttributeNumberFormat.WITH_UNIT) {
+                if (unitCategory.isNotBlank()) segments += "单位类型：$unitCategory"
+                if (defaultUnit.isNotBlank()) segments += "默认单位：$defaultUnit"
+            }
+            if (decimalPlacesText.isNotBlank()) segments += "小数位：$decimalPlacesText"
+            segments += if (allowNegative) "允许负数" else "不允许负数"
+        }
+        AttributeValueType.DATE -> segments += "日期"
+        AttributeValueType.BOOLEAN -> {
+            segments += "交互：${booleanAttributeInputModeLabel(booleanInputMode)}"
+            if (trueLabel.isNotBlank()) segments += "真值：$trueLabel"
+            if (falseLabel.isNotBlank()) segments += "假值：$falseLabel"
+        }
+        AttributeValueType.SELECT -> {
+            segments += if (isMultiSelect) "多选" else "单选"
+            val options = optionItemsText
+                .lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toList()
+            if (options.isNotEmpty()) {
+                segments += "选项：${options.joinToString(" / ")}"
+            }
+        }
+    }
+    when (valueSource) {
+        AttributeValueSource.FIXED -> if (defaultValue.isNotBlank()) {
+            segments += "固定值：$defaultValue"
+        }
+        AttributeValueSource.SYSTEM -> if (!systemVariableLabel.isNullOrBlank()) {
+            segments += "系统变量：$systemVariableLabel"
+        }
+        AttributeValueSource.INPUT -> Unit
+    }
+    return segments.joinToString(" · ").ifBlank { "无额外值属性" }
+}
+
+@Composable
 private fun RuleBindingCard(
     binding: RuleBindingUiModel,
 ) {
@@ -4277,6 +5362,7 @@ private fun ruleTriggerModeLabel(mode: RuleTriggerMode): String = when (mode) {
     RuleTriggerMode.ON_FORM_OPENED -> "打开表单时"
     RuleTriggerMode.ON_SAVE -> "保存时"
     RuleTriggerMode.ON_SYSTEM_INPUT_CHANGED -> "系统输入变化时"
+    RuleTriggerMode.SCHEDULED -> "周期调度"
 }
 
 private fun ruleSlotDirectionLabel(direction: RuleSlotDirection): String = when (direction) {

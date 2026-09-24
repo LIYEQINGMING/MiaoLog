@@ -52,7 +52,10 @@
   - `entryAttributeId`
   - `entrySlotKey`
   - `slotBindingsJson`
+  - `isEnabled`
+  - `togglePlacementAttributeId`
   - `status`
+  - `runtimeStateJson`
   - `creationSource`
   - `description`
   - `createdAt`
@@ -63,6 +66,16 @@
 - `RuleDefinition` 继续作为“规则母版”。
 - `RuleBindingInstance` 继续作为“规则实例领域模型”。
 - `item_rule_bindings` 是 `RuleBindingInstance` 在物品维度上的持久化落点。
+
+补充字段说明：
+
+- `isEnabled` 表示该物品上的这条规则当前是否启用
+- `togglePlacementAttributeId` 表示用户把该规则的操作开关挂在了哪个属性下方
+- `runtimeStateJson` 用于保存最小运行时状态，例如：
+  - `lastExecutedAt`
+  - `nextRunAt`
+  - `lastGeneratedEventAt`
+  - `lastExecutionFingerprint`
 
 ## 5. 兼容策略
 
@@ -81,9 +94,10 @@
 2. 如果某条规则因此失去完整绑定，则它在规则页变为红色提醒状态。
 3. 输出槽位如果指向属性，则运行时自动回写属性值。
 4. 只读输出则仅做展示，不写回属性。
+5. 当规则定义包含 `SCHEDULED` 时，物品级规则实例还要负责持久化下一次调度时间与事件生成状态。
 
 ## 7. 当前落地顺序
 
 1. 先落后端：表、DAO、Repository、缓存、运行时入口。
 2. 再落前端：物品页双 Tab、规则实例编辑、缺失提醒。
-3. 最后再逐步清理旧属性级规则绑定的遗留消费路径。
+3. 最后再逐步清理旧属性级规则绑定的遗留消费路径，并接入周期调度执行器。

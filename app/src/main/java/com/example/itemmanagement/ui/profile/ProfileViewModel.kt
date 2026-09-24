@@ -196,6 +196,7 @@ class ProfileViewModel(
             // 工具卡片（回收站、应用设置、数据导出合并）
             add(ProfileItem.MenuItem("category_management", "分类管理", R.drawable.ic_tune_colorful))
             add(ProfileItem.MenuItem("attribute_management", "属性管理", R.drawable.ic_tune_colorful))
+            add(ProfileItem.MenuItem("rule_management", "规则管理", R.drawable.ic_tune_colorful))
             add(ProfileItem.MenuItem("recycle_bin", "回收站", R.drawable.ic_delete_colorful))
             add(ProfileItem.MenuItem("app_settings", "应用设置", R.drawable.ic_tune_colorful))
             add(ProfileItem.MenuItem("data_export", "数据导出", R.drawable.ic_save_colorful, showDivider = false))

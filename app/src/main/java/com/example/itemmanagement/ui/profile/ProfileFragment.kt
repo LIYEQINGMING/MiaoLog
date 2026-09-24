@@ -127,6 +127,7 @@ class ProfileFragment : Fragment() {
         when (menuId) {
             "category_management" -> navigateToCategoryManagement()
             "attribute_management" -> navigateToAttributeManagement()
+            "rule_management" -> navigateToRuleManagement()
             "recycle_bin" -> navigateToRecycleBin()
             "data_export" -> navigateToDataExport()
             "app_settings" -> navigateToAppSettings()
@@ -181,6 +182,14 @@ class ProfileFragment : Fragment() {
             findNavController().navigate(R.id.action_profile_to_attribute_management)
         } catch (e: Exception) {
             SnackbarHelper.show(requireView(), "属性管理页面开发中")
+        }
+    }
+
+    private fun navigateToRuleManagement() {
+        try {
+            findNavController().navigate(R.id.action_profile_to_rule_management)
+        } catch (e: Exception) {
+            SnackbarHelper.show(requireView(), "规则管理页面开发中")
         }
     }
 

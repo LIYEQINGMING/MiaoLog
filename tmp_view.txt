@@ -1,0 +1,150 @@
+﻿        item {
+            SectionCard(title = "画布工具箱") {
+                Text(
+                    text = "先把槽位放进画布，再配置当前选中槽位。计算关系由下方公式编码层保存。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = false,
+                        onClick = { addSlot(RuleSlotDirection.INPUT, RuleSlotSourceType.ATTRIBUTE_INPUT) },
+                        label = { Text("空输入槽位") },
+                    )
+                    FilterChip(
+                        selected = false,
+                        onClick = { addSlot(RuleSlotDirection.OUTPUT, RuleSlotSourceType.ATTRIBUTE_OUTPUT) },
+                        label = { Text("空输出槽位") },
+                    )
+                    FilterChip(
+                        selected = false,
+                        onClick = { addSlot(RuleSlotDirection.INPUT, RuleSlotSourceType.SYSTEM_INPUT) },
+                        label = { Text("系统变量槽位") },
+                    )
+                    FilterChip(
+                        selected = false,
+                        onClick = { addSlot(RuleSlotDirection.INPUT, RuleSlotSourceType.CONFIG_INPUT) },
+                        label = { Text("固定值槽位") },
+                    )
+                }
+                DetailTextBlock("当前画布", "${inputSlots.size} 个输入槽位 / ${outputSlots.size} 个输出槽位")
+                snippetGroups.forEach { group ->
+                    RuleWorkbenchSnippetGroup(
+                        title = group.title,
+                        snippets = group.snippets,
+                        onSnippetClick = ::insertSnippet,
+                    )
+                }
+            }
+        }
+        item {
+            SectionCard(title = "公式画布") {
+                Text(
+                    text = "从左侧素材栏拖入节点，点击节点进行配置。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(500.dp),
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    RuleCanvasPalette(
+                        onPaletteItemSelected = { item ->
+                            when (item) {
+                                is PaletteItem.EmptySlot -> {
+                                    val direction = if (item.label.contains("输出")) {
+                                        RuleSlotDirection.OUTPUT
+                                    } else {
+                                        RuleSlotDirection.INPUT
+                                    }
+                                    val sourceType = when {
+                                        item.label.contains("系统") -> RuleSlotSourceType.SYSTEM_INPUT
+                                        item.label.contains("固定") -> RuleSlotSourceType.CONFIG_INPUT
+                                        direction == RuleSlotDirection.OUTPUT -> RuleSlotSourceType.ATTRIBUTE_OUTPUT
+                                        else -> RuleSlotSourceType.ATTRIBUTE_INPUT
+                                    }
+                                    addSlot(direction, sourceType)
+                                }
+                                is PaletteItem.Operator -> {
+                                    val newNode = CanvasNode(
+                                        type = CanvasNodeType.OPERATOR,
+                                        position = Offset(100f + canvasState.nodes.size * 150f, 100f),
+                                        operatorSymbol = item.symbol,
+                                    )
+                                    canvasState = canvasState.copy(nodes = canvasState.nodes + newNode)
+                                }
+                                is PaletteItem.Function -> {
+                                    val newNode = CanvasNode(
+                                        type = CanvasNodeType.FUNCTION,
+                                        position = Offset(100f + canvasState.nodes.size * 150f, 100f),
+                                        functionName = item.name,
+                                    )
+                                    canvasState = canvasState.copy(nodes = canvasState.nodes + newNode)
+                                }
+                            }
+                        },
+                    )
+                    DraggableRuleCanvas(
+                        canvasState = canvasState,
+                        onNodeAdded = { node ->
+                            canvasState = canvasState.copy(nodes = canvasState.nodes + node)
+                        },
+                        onNodeMoved = { nodeId, newPosition ->
+                            canvasState = canvasState.copy(
+                                nodes = canvasState.nodes.map { node ->
+                                    if (node.id == nodeId) node.copy(position = newPosition) else node
+                                }
+                            )
+                        },
+                        onNodeSelected = { nodeId ->
+                            canvasState = canvasState.copy(selectedNodeId = nodeId)
+                            val node = canvasState.nodes.find { it.id == nodeId }
+                            if (node?.type == CanvasNodeType.SLOT && node.slotConfig != null) {
+                                showSlotConfigDialog = nodeId
+                            }
+                        },
+                        onNodeDeleted = { nodeId ->
+                            removeSlot(nodeId)
+                        },
+                        onConnectionAdded = { fromId, toId ->
+                            val newConnection = CanvasConnection(fromNodeId = fromId, toNodeId = toId)
+                            canvasState = canvasState.copy(connections = canvasState.connections + newConnection)
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "公式编码（高级）",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                OutlinedTextField(
+                    value = expressionField,
+                    onValueChange = { expressionField = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("表达式") },
+                    supportingText = {
+                        Text("画布节点会自动生成表达式。也可以手动编辑，支持变量、四则、比较、逻辑、if、coalesce等。")
+                    },
+                    minLines = 3,
+                )
+                RuleWorkbenchDecoderCard(decoder = decoder)
+            }
+        }
+        item {
+            PrimaryActionCard(
+                title = draft.saveButtonText,
+                description = buildString {
+                    append(if (draft.isEditMode) "保存当前规则修改。" else "创建新的规则定义。")
+                    append(" 当前已配置 ${inputSlots.size} 个输入槽位，${outputSlots.size} 个输出槽位。")
+                },
+                actionLabel = draft.saveButtonText,
+                onClick = {

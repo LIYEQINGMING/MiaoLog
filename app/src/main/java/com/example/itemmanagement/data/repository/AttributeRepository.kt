@@ -680,13 +680,33 @@ class AttributeRepository(
             name = "周期扣费规则模板",
             category = "CYCLE",
             computationType = RuleComputationType.CYCLE,
-            triggerModes = listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE),
+            triggerModes = listOf(
+                RuleTriggerMode.ON_VALUE_CHANGED,
+                RuleTriggerMode.ON_SAVE,
+                RuleTriggerMode.SCHEDULED,
+            ),
             activationMode = RuleActivationMode.USER_TOGGLE,
             toggleUiConfig = RuleToggleUiConfig(
                 labelWhenEnabled = "自动续费",
                 labelWhenDisabled = "暂停续费",
                 anchorSlotKey = "amount",
                 defaultEnabled = true,
+            ),
+            scheduleConfig = RuleScheduleConfig(
+                sourceType = RuleScheduleTimeSourceType.SLOT,
+                sourceMode = RuleScheduleSourceMode.SLOT_DRIVEN,
+                slotKeys = listOf("billingCycle", "billingDay"),
+                description = "根据扣费周期与扣费日推导下一次调度时间",
+                slotDrivenConfig = RuleSlotDrivenScheduleConfig(
+                    frequencySlotKey = "billingCycle",
+                    dayOfMonthSlotKey = "billingDay",
+                ),
+            ),
+            scheduleEventConfig = RuleScheduleEventConfig(
+                generateCalendarEvent = true,
+                eventTitleTemplate = "自动续费提醒",
+                eventDateSlotKey = "billingDay",
+                dedupeKeyStrategy = "ruleId+billingDay",
             ),
             slots = listOf(
                 RuleSlotDefinition(
@@ -737,7 +757,7 @@ class AttributeRepository(
                     targetType = RuleOutputTargetType.READONLY_RESULT,
                 )
             ),
-            description = "第一阶段先承接周期扣费关系与启停控制，后续再补完整日期推导与调度"
+            description = "根据扣费周期、扣费日和购入价格驱动自动续费与周期扣费流程"
         ),
         RuleTemplate(
             id = "template_rule_remaining_payment",
@@ -1112,14 +1132,38 @@ class AttributeRepository(
         val typeSlotList = object : TypeToken<List<RuleSlotDefinition>>() {}.type
         val typeOutputStrategyList = object : TypeToken<List<RuleOutputStrategyDefinition>>() {}.type
         val typeToggleUiConfig = object : TypeToken<RuleToggleUiConfig>() {}.type
+        val typeScheduleConfig = object : TypeToken<RuleScheduleConfig>() {}.type
+        val typeScheduleEventConfig = object : TypeToken<RuleScheduleEventConfig>() {}.type
+        val typeCanvasDefinition = object : TypeToken<RuleCanvasDefinition>() {}.type
         val parsedTriggerModes = try {
             gson.fromJson<List<RuleTriggerMode>>(triggerModesJson, typeTriggerModeList) ?: emptyList<RuleTriggerMode>()
         } catch (e: Exception) {
             emptyList()
-        }.ifEmpty { listOf(RuleTriggerMode.ON_VALUE_CHANGED) }
+        }.ifEmpty { listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE) }
         val parsedToggleUiConfig = try {
             toggleUiJson?.takeIf { it.isNotBlank() }?.let {
                 gson.fromJson<RuleToggleUiConfig>(it, typeToggleUiConfig)
+            }
+        } catch (e: Exception) {
+            null
+        }
+        val parsedScheduleConfig = try {
+            scheduleConfigJson?.takeIf { it.isNotBlank() }?.let {
+                gson.fromJson<RuleScheduleConfig>(it, typeScheduleConfig)
+            }
+        } catch (e: Exception) {
+            null
+        }
+        val parsedScheduleEventConfig = try {
+            scheduleEventConfigJson?.takeIf { it.isNotBlank() }?.let {
+                gson.fromJson<RuleScheduleEventConfig>(it, typeScheduleEventConfig)
+            }
+        } catch (e: Exception) {
+            null
+        }
+        val parsedCanvasDefinition = try {
+            canvasDefinitionJson?.takeIf { it.isNotBlank() }?.let {
+                gson.fromJson<RuleCanvasDefinition>(it, typeCanvasDefinition)
             }
         } catch (e: Exception) {
             null
@@ -1145,6 +1189,9 @@ class AttributeRepository(
                 triggerModes = parsedTriggerModes,
                 activationMode = activationMode,
                 toggleUiConfig = parsedToggleUiConfig,
+                scheduleConfig = parsedScheduleConfig,
+                scheduleEventConfig = parsedScheduleEventConfig,
+                canvasDefinition = parsedCanvasDefinition,
                 slots = parsedSlots,
                 expressionDefinition = expression?.takeIf { it.isNotBlank() }?.let {
                     RuleExpressionDefinition(expression = it)
@@ -1221,6 +1268,9 @@ class AttributeRepository(
             triggerModes = parsedTriggerModes,
             activationMode = activationMode,
             toggleUiConfig = parsedToggleUiConfig,
+            scheduleConfig = parsedScheduleConfig,
+            scheduleEventConfig = parsedScheduleEventConfig,
+            canvasDefinition = parsedCanvasDefinition,
             slots = legacySlots,
             expressionDefinition = expression?.takeIf { it.isNotBlank() }?.let {
                 RuleExpressionDefinition(expression = it, referencedSlotKeys = inputRoles + outputKeys)
@@ -1239,6 +1289,9 @@ class AttributeRepository(
             triggerModesJson = gson.toJson(triggerModes),
             activationMode = activationMode,
             toggleUiJson = toggleUiConfig?.let(gson::toJson),
+            scheduleConfigJson = scheduleConfig?.let(gson::toJson),
+            scheduleEventConfigJson = scheduleEventConfig?.let(gson::toJson),
+            canvasDefinitionJson = canvasDefinition?.let(gson::toJson),
             inputRolesJson = gson.toJson(slots),
             requiredDependenciesJson = gson.toJson(outputStrategies),
             optionalDependenciesJson = gson.toJson(emptyList<String>()),
@@ -1273,6 +1326,29 @@ class AttributeRepository(
                 RuleActivationMode.ALWAYS_ON -> null
                 RuleActivationMode.USER_TOGGLE -> rule.toggleUiConfig ?: RuleToggleUiConfig()
             },
+            triggerModes = rule.triggerModes.ifEmpty {
+                listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE)
+            },
+            scheduleConfig = if (RuleTriggerMode.SCHEDULED in rule.triggerModes) {
+                val baseConfig = rule.scheduleConfig ?: RuleScheduleConfig(
+                    sourceType = RuleScheduleTimeSourceType.FIXED,
+                    sourceMode = RuleScheduleSourceMode.MANUAL_CALENDAR_RULE,
+                )
+                baseConfig.copy(
+                    sourceMode = baseConfig.resolveSourceMode(),
+                    slotKeys = baseConfig.allReferencedSlotKeys(),
+                )
+            } else {
+                null
+            },
+            scheduleEventConfig = if (RuleTriggerMode.SCHEDULED in rule.triggerModes) {
+                (rule.scheduleEventConfig ?: RuleScheduleEventConfig()).copy(
+                    generateCalendarEvent = true,
+                )
+            } else {
+                null
+            },
+            canvasDefinition = rule.canvasDefinition,
             slots = rule.slots.map(::normalizeRuleSlotDefinition),
         )
     }

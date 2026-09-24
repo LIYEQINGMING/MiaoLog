@@ -55,6 +55,7 @@ data class RuleBindingInstance(
     val slotBindings: List<RuleSlotBinding>,
     val togglePlacementSlotKey: String? = null,
     val isEnabled: Boolean = true,
+    val runtimeState: RuleRuntimeState? = null,
     val status: RuleBindingStatus = RuleBindingStatus.ACTIVE,
     val creationSource: RuleBindingCreationSource = RuleBindingCreationSource.ATTRIBUTE_MANAGEMENT,
     val description: String? = null,

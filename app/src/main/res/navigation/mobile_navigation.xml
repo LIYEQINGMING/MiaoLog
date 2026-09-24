@@ -108,6 +108,9 @@
             android:id="@+id/action_profile_to_attribute_management"
             app:destination="@id/nav_attribute" />
         <action
+            android:id="@+id/action_profile_to_rule_management"
+            app:destination="@id/nav_rule_management" />
+        <action
             android:id="@+id/action_profile_to_data_export"
             app:destination="@id/navigation_data_export" />
         <action
@@ -257,6 +260,11 @@
         android:id="@+id/nav_attribute"
         android:name="com.example.itemmanagement.ui.attribute.AttributeFragment"
         android:label="属性管理" />
+
+    <fragment
+        android:id="@+id/nav_rule_management"
+        android:name="com.example.itemmanagement.ui.attribute.RuleManagementFragment"
+        android:label="规则管理" />
 
     <fragment
         android:id="@+id/categoryPickerFragment"

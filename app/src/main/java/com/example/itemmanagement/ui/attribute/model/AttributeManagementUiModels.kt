@@ -6,8 +6,13 @@ import com.example.itemmanagement.data.model.attribute.AttributeValueSource
 import com.example.itemmanagement.data.model.attribute.AttributeValueType
 import com.example.itemmanagement.data.model.attribute.RuleComputationType
 import com.example.itemmanagement.data.model.attribute.RuleActivationMode
+import com.example.itemmanagement.data.model.attribute.RuleCanvasDefinition
 import com.example.itemmanagement.data.model.attribute.RuleOutputTargetType
 import com.example.itemmanagement.data.model.attribute.RuleOutputUpdateMode
+import com.example.itemmanagement.data.model.attribute.RuleManualScheduleRule
+import com.example.itemmanagement.data.model.attribute.RuleScheduleSourceMode
+import com.example.itemmanagement.data.model.attribute.RuleSlotDrivenScheduleConfig
+import com.example.itemmanagement.data.model.attribute.RuleScheduleTimeSourceType
 import com.example.itemmanagement.data.model.attribute.RuleSlotDirection
 import com.example.itemmanagement.data.model.attribute.RuleSlotSourceType
 import com.example.itemmanagement.data.model.attribute.RuleSlotValueType
@@ -17,6 +22,11 @@ enum class AttributeManagementTab(val displayName: String) {
     ATTRIBUTES("属性"),
     RULES("规则"),
     TEMPLATES("模板"),
+}
+
+enum class AttributeManagementEntryMode {
+    ATTRIBUTES,
+    RULES,
 }
 
 enum class AttributeSourceFilter(val displayName: String) {
@@ -175,6 +185,7 @@ data class RuleListItemUiModel(
     val name: String,
     val icon: String,
     val ruleTypeLabel: String,
+    val activationSummary: String,
     val triggerSummary: String,
     val slotCountSummary: String,
     val inputSummary: String,
@@ -234,7 +245,10 @@ data class RuleDetailUiModel(
     val icon: String,
     val sourceLabel: String,
     val ruleType: String,
+    val activationSummary: String,
     val triggerModes: List<String>,
+    val scheduleSummary: String?,
+    val scheduleEventSummary: String?,
     val inputSlots: List<RuleSlotSummaryUiModel>,
     val outputSlots: List<RuleSlotSummaryUiModel>,
     val outputStrategies: List<RuleOutputStrategySummaryUiModel>,
@@ -271,7 +285,10 @@ sealed class TemplateDetailUiModel {
         override val icon: String,
         override val isSystemBuiltIn: Boolean,
         val ruleType: String,
+        val activationSummary: String,
         val triggerModes: List<String>,
+        val scheduleSummary: String?,
+        val scheduleEventSummary: String?,
         val inputSlots: List<RuleSlotSummaryUiModel>,
         val outputSlots: List<RuleSlotSummaryUiModel>,
         val outputStrategies: List<RuleOutputStrategySummaryUiModel>,
@@ -433,16 +450,30 @@ data class RuleEditorDraftUiModel(
     val templateName: String? = null,
     val computationType: RuleComputationType = RuleComputationType.CUSTOM,
     val triggerModes: List<com.example.itemmanagement.data.model.attribute.RuleTriggerMode> = listOf(
-        com.example.itemmanagement.data.model.attribute.RuleTriggerMode.ON_VALUE_CHANGED
+        com.example.itemmanagement.data.model.attribute.RuleTriggerMode.ON_VALUE_CHANGED,
+        com.example.itemmanagement.data.model.attribute.RuleTriggerMode.ON_SAVE,
     ),
     val activationMode: RuleActivationMode = RuleActivationMode.ALWAYS_ON,
     val toggleLabelWhenEnabled: String = "",
     val toggleLabelWhenDisabled: String = "",
     val toggleAnchorSlotKey: String = "",
     val toggleDefaultEnabled: Boolean = true,
+    val isScheduledEnabled: Boolean = false,
+    val scheduleSourceMode: RuleScheduleSourceMode = RuleScheduleSourceMode.MANUAL_CALENDAR_RULE,
+    val scheduleTimeSourceType: RuleScheduleTimeSourceType = RuleScheduleTimeSourceType.FIXED,
+    val scheduleFixedValue: String = "",
+    val scheduleSlotKeys: List<String> = emptyList(),
+    val scheduleDescription: String = "",
+    val manualScheduleRule: RuleManualScheduleRule? = null,
+    val slotDrivenScheduleConfig: RuleSlotDrivenScheduleConfig? = null,
+    val generateCalendarEvent: Boolean = false,
+    val scheduleEventTitleTemplate: String = "",
+    val scheduleEventDateSlotKey: String = "",
+    val scheduleEventDedupeKeyStrategy: String = "",
     val slots: List<RuleSlotDraftUiModel> = emptyList(),
     val systemVariableOptions: List<SystemVariableOptionUiModel> = emptyList(),
     val expression: String = "",
+    val canvasDefinition: RuleCanvasDefinition? = null,
     val title: String = "新建规则",
     val saveButtonText: String = "保存规则",
     val isEditMode: Boolean = false,
@@ -461,6 +492,7 @@ data class RuleSlotDraftUiModel(
     val isRequired: Boolean = true,
     val allowQuickCreateAttribute: Boolean = false,
     val systemVariableKey: String = "",
+    val configValue: String = "",
     val outputTargetType: com.example.itemmanagement.data.model.attribute.RuleOutputTargetType =
         com.example.itemmanagement.data.model.attribute.RuleOutputTargetType.READONLY_RESULT,
     val outputUpdateMode: com.example.itemmanagement.data.model.attribute.RuleOutputUpdateMode =
@@ -512,6 +544,7 @@ sealed class AttributeManagementRouteState {
 }
 
 data class AttributeManagementUiState(
+    val entryMode: AttributeManagementEntryMode = AttributeManagementEntryMode.ATTRIBUTES,
     val selectedTab: AttributeManagementTab = AttributeManagementTab.ATTRIBUTES,
     val searchQuery: String = "",
     val attributePane: AttributeListPaneState = AttributeListPaneState(),

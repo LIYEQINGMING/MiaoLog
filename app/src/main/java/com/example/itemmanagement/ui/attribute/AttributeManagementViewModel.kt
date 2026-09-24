@@ -17,14 +17,25 @@ import com.example.itemmanagement.data.model.attribute.RuleBindingInstance
 import com.example.itemmanagement.data.model.attribute.RuleBindingStatus
 import com.example.itemmanagement.data.model.attribute.RuleBindingCreationSource
 import com.example.itemmanagement.data.model.attribute.RuleActivationMode
+import com.example.itemmanagement.data.model.attribute.RuleCanvasDefinition
 import com.example.itemmanagement.data.model.attribute.RuleComputationType
 import com.example.itemmanagement.data.model.attribute.RuleDefinition
 import com.example.itemmanagement.data.model.attribute.RuleExpressionDefinition
 import com.example.itemmanagement.data.model.attribute.RuleInputSourceType
+import com.example.itemmanagement.data.model.attribute.RuleManualScheduleRule
 import com.example.itemmanagement.data.model.attribute.RuleOutputStrategyDefinition
 import com.example.itemmanagement.data.model.attribute.RuleOutputTargetDefinition
 import com.example.itemmanagement.data.model.attribute.RuleOutputTargetType
 import com.example.itemmanagement.data.model.attribute.RuleOutputUpdateMode
+import com.example.itemmanagement.data.model.attribute.RuleScheduleConfig
+import com.example.itemmanagement.data.model.attribute.RuleScheduleEventConfig
+import com.example.itemmanagement.data.model.attribute.RuleScheduleEndType
+import com.example.itemmanagement.data.model.attribute.RuleScheduleFrequency
+import com.example.itemmanagement.data.model.attribute.RuleScheduleMonthlyPatternType
+import com.example.itemmanagement.data.model.attribute.RuleScheduleSourceMode
+import com.example.itemmanagement.data.model.attribute.RuleScheduleWeekday
+import com.example.itemmanagement.data.model.attribute.RuleSlotDrivenScheduleConfig
+import com.example.itemmanagement.data.model.attribute.RuleScheduleTimeSourceType
 import com.example.itemmanagement.data.model.attribute.RuleSlotBinding
 import com.example.itemmanagement.data.model.attribute.RuleSlotDefinition
 import com.example.itemmanagement.data.model.attribute.RuleSlotDirection
@@ -42,6 +53,8 @@ import com.example.itemmanagement.data.model.attribute.builtInSystemVariableDefi
 import com.example.itemmanagement.data.model.attribute.findSystemVariableDefinition
 import com.example.itemmanagement.data.model.attribute.findSystemVariableKey
 import com.example.itemmanagement.data.model.attribute.resolveAttributeRuleDependencyHints
+import com.example.itemmanagement.data.model.attribute.allReferencedSlotKeys
+import com.example.itemmanagement.data.model.attribute.resolveSourceMode
 import com.example.itemmanagement.data.model.attribute.resolveEffectiveRuleOutputTargets
 import com.example.itemmanagement.data.model.attribute.resolveEffectiveRuleSystemInputs
 import com.example.itemmanagement.data.model.attribute.resolveEffectiveRuleTriggerModes
@@ -114,9 +127,31 @@ class AttributeManagementViewModel(
         )
     }
 
+    fun initializeEntryMode(entryMode: AttributeManagementEntryMode) {
+        val selectedTab = when (entryMode) {
+            AttributeManagementEntryMode.ATTRIBUTES -> AttributeManagementTab.ATTRIBUTES
+            AttributeManagementEntryMode.RULES -> AttributeManagementTab.RULES
+        }
+        val current = _uiState.value
+        if (current.entryMode == entryMode && current.selectedTab == selectedTab) {
+            return
+        }
+        _uiState.value = current.copy(
+            entryMode = entryMode,
+            selectedTab = selectedTab,
+            routeState = AttributeManagementRouteState.List,
+        )
+        refresh()
+    }
+
     fun selectTab(tab: AttributeManagementTab) {
-        _uiState.value = _uiState.value.copy(
-            selectedTab = tab,
+        val current = _uiState.value
+        val allowedTab = when (current.entryMode) {
+            AttributeManagementEntryMode.ATTRIBUTES -> AttributeManagementTab.ATTRIBUTES
+            AttributeManagementEntryMode.RULES -> AttributeManagementTab.RULES
+        }
+        _uiState.value = current.copy(
+            selectedTab = if (tab == allowedTab) tab else allowedTab,
             routeState = AttributeManagementRouteState.List,
         )
     }
@@ -225,6 +260,26 @@ class AttributeManagementViewModel(
         _uiState.value = _uiState.value.copy(
             routeState = AttributeManagementRouteState.AttributeEditor(buildAttributeEditorDraft(attribute))
         )
+    }
+
+    fun duplicateAttribute(attributeId: String) {
+        val attribute = currentAttributes.firstOrNull { it.id == attributeId } ?: return
+        if (attribute.ownerType == AttributeOwnerType.SYSTEM) {
+            postMessage("系统属性当前阶段不允许复制")
+            return
+        }
+        viewModelScope.launch {
+            val duplicatedName = buildDuplicatedAttributeName(attribute.name)
+            repository.saveAttribute(
+                attribute.copy(
+                    id = generateAttributeId(),
+                    key = buildAttributeKey(duplicatedName),
+                    name = duplicatedName,
+                    ownerType = AttributeOwnerType.CUSTOM,
+                )
+            )
+            postMessage("已复制属性：$duplicatedName")
+        }
     }
 
     fun openRuleBindingWizard(
@@ -545,7 +600,7 @@ class AttributeManagementViewModel(
                 interactionMode = interactionMode,
                 icon = existing?.icon ?: iconForValueType(draft.valueType, valueProperties),
                 templateId = draft.templateId,
-                ruleBindings = emptyList(),
+                ruleBindings = existing?.ruleBindings ?: emptyList(),
                 description = draft.description.trim().ifBlank { null },
             )
             repository.saveAttribute(attribute)
@@ -567,7 +622,7 @@ class AttributeManagementViewModel(
             postMessage("已存在同名规则，请调整名称后再保存")
             return
         }
-        val triggerModes = draft.triggerModes.ifEmpty { listOf(RuleTriggerMode.ON_VALUE_CHANGED) }
+        val triggerModes = buildRuleTriggerModesFromDraft(draft)
         val slots = sanitizeRuleSlotDrafts(draft.slots)
         if (slots.isEmpty()) {
             postMessage("规则至少需要一个槽位")
@@ -618,6 +673,40 @@ class AttributeManagementViewModel(
                 return
             }
         }
+        if (draft.isScheduledEnabled) {
+            when (resolveEffectiveScheduleSourceMode(draft)) {
+                RuleScheduleSourceMode.MANUAL_CALENDAR_RULE -> {
+                    val manualRule = draft.manualScheduleRule
+                    val hasLegacyFixedValue = draft.scheduleFixedValue.trim().isNotBlank()
+                    if ((manualRule == null || manualRule.startAtMillis == null) && !hasLegacyFixedValue) {
+                        postMessage("启用周期调度时，需要填写开始时间或调度规则")
+                        return
+                    }
+                }
+                RuleScheduleSourceMode.SLOT_DRIVEN -> {
+                    val referencedSlotKeys = collectScheduleReferencedSlotKeys(draft)
+                    if (referencedSlotKeys.isEmpty()) {
+                        postMessage("启用周期调度时，至少需要配置一个调度槽位")
+                        return
+                    }
+                    val invalidSlotKey = referencedSlotKeys.firstOrNull { slotKey ->
+                        inputSlots.none { it.key == slotKey }
+                    }
+                    if (invalidSlotKey != null) {
+                        postMessage("调度槽位“$invalidSlotKey”不存在，请重新选择")
+                        return
+                    }
+                }
+            }
+            val eventDateSlotKey = draft.scheduleEventDateSlotKey.trim()
+            if (eventDateSlotKey.isNotBlank()) {
+                val slotExists = slots.any { it.key == eventDateSlotKey }
+                if (!slotExists) {
+                    postMessage("日历事件日期槽位不存在，请重新选择")
+                    return
+                }
+            }
+        }
         val expression = draft.expression.trim()
 
         viewModelScope.launch {
@@ -630,7 +719,7 @@ class AttributeManagementViewModel(
                 id = existing?.id ?: generateRuleId(),
                 key = existing?.key ?: buildRuleKey(name),
                 name = name,
-                computationType = draft.computationType,
+                computationType = RuleComputationType.CUSTOM,
                 triggerModes = triggerModes,
                 activationMode = draft.activationMode,
                 toggleUiConfig = if (draft.activationMode == RuleActivationMode.USER_TOGGLE) {
@@ -643,6 +732,46 @@ class AttributeManagementViewModel(
                 } else {
                     null
                 },
+                scheduleConfig = if (draft.isScheduledEnabled) {
+                    val effectiveScheduleSourceMode = resolveEffectiveScheduleSourceMode(draft)
+                    val slotDrivenConfig = draft.slotDrivenScheduleConfig ?: buildLegacySlotDrivenScheduleConfig(draft)
+                    RuleScheduleConfig(
+                        sourceType = when (effectiveScheduleSourceMode) {
+                            RuleScheduleSourceMode.MANUAL_CALENDAR_RULE -> RuleScheduleTimeSourceType.FIXED
+                            RuleScheduleSourceMode.SLOT_DRIVEN -> RuleScheduleTimeSourceType.SLOT
+                        },
+                        sourceMode = effectiveScheduleSourceMode,
+                        fixedValue = draft.scheduleFixedValue.trim().ifBlank { null },
+                        slotKeys = when (effectiveScheduleSourceMode) {
+                            RuleScheduleSourceMode.MANUAL_CALENDAR_RULE -> emptyList()
+                            RuleScheduleSourceMode.SLOT_DRIVEN -> collectScheduleReferencedSlotKeys(draft)
+                        },
+                        description = draft.scheduleDescription.trim().ifBlank { null },
+                        manualRule = if (effectiveScheduleSourceMode == RuleScheduleSourceMode.MANUAL_CALENDAR_RULE) {
+                            draft.manualScheduleRule
+                        } else {
+                            null
+                        },
+                        slotDrivenConfig = if (effectiveScheduleSourceMode == RuleScheduleSourceMode.SLOT_DRIVEN) {
+                            slotDrivenConfig
+                        } else {
+                            null
+                        },
+                    )
+                } else {
+                    null
+                },
+                scheduleEventConfig = if (draft.isScheduledEnabled) {
+                    RuleScheduleEventConfig(
+                        generateCalendarEvent = true,
+                        eventTitleTemplate = draft.scheduleEventTitleTemplate.trim(),
+                        eventDateSlotKey = draft.scheduleEventDateSlotKey.trim().ifBlank { null },
+                        dedupeKeyStrategy = draft.scheduleEventDedupeKeyStrategy.trim().ifBlank { null },
+                    )
+                } else {
+                    null
+                },
+                canvasDefinition = draft.canvasDefinition,
                 slots = slotDefinitions,
                 expressionDefinition = expression.ifBlank { null }?.let {
                     RuleExpressionDefinition(
@@ -717,10 +846,10 @@ class AttributeManagementViewModel(
             pendingCreatedAttributes = emptyList(),
             title = when {
                 attribute != null -> "编辑属性"
-                template != null -> "从模板创建属性"
+                template != null -> "新建属性"
                 else -> "新建属性"
             },
-            saveButtonText = if (attribute != null) "保存属性定义" else "保存属性定义",
+            saveButtonText = "保存属性",
             isEditMode = attribute != null,
         )
     }
@@ -742,7 +871,7 @@ class AttributeManagementViewModel(
             computationType = rule?.computationType ?: template?.computationType ?: RuleComputationType.CUSTOM,
             triggerModes = rule?.let(::resolveEffectiveRuleTriggerModes)
                 ?: template?.triggerModes
-                ?: listOf(RuleTriggerMode.ON_VALUE_CHANGED),
+                ?: listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE),
             activationMode = rule?.activationMode ?: template?.activationMode ?: RuleActivationMode.ALWAYS_ON,
             toggleLabelWhenEnabled = rule?.toggleUiConfig?.labelWhenEnabled
                 ?: template?.toggleUiConfig?.labelWhenEnabled
@@ -756,6 +885,38 @@ class AttributeManagementViewModel(
             toggleDefaultEnabled = rule?.toggleUiConfig?.defaultEnabled
                 ?: template?.toggleUiConfig?.defaultEnabled
                 ?: true,
+            isScheduledEnabled = (rule?.triggerModes ?: template?.triggerModes ?: emptyList()).contains(RuleTriggerMode.SCHEDULED),
+            scheduleSourceMode = rule?.scheduleConfig?.resolveSourceMode()
+                ?: template?.scheduleConfig?.resolveSourceMode()
+                ?: RuleScheduleSourceMode.MANUAL_CALENDAR_RULE,
+            scheduleTimeSourceType = rule?.scheduleConfig?.sourceType
+                ?: template?.scheduleConfig?.sourceType
+                ?: RuleScheduleTimeSourceType.FIXED,
+            scheduleFixedValue = rule?.scheduleConfig?.fixedValue
+                ?: template?.scheduleConfig?.fixedValue
+                .orEmpty(),
+            scheduleSlotKeys = rule?.scheduleConfig?.slotKeys
+                ?: template?.scheduleConfig?.slotKeys
+                ?: emptyList(),
+            scheduleDescription = rule?.scheduleConfig?.description
+                ?: template?.scheduleConfig?.description
+                .orEmpty(),
+            manualScheduleRule = rule?.scheduleConfig?.manualRule
+                ?: template?.scheduleConfig?.manualRule,
+            slotDrivenScheduleConfig = rule?.scheduleConfig?.slotDrivenConfig
+                ?: template?.scheduleConfig?.slotDrivenConfig,
+            generateCalendarEvent = rule?.scheduleEventConfig?.generateCalendarEvent
+                ?: template?.scheduleEventConfig?.generateCalendarEvent
+                ?: false,
+            scheduleEventTitleTemplate = rule?.scheduleEventConfig?.eventTitleTemplate
+                ?: template?.scheduleEventConfig?.eventTitleTemplate
+                .orEmpty(),
+            scheduleEventDateSlotKey = rule?.scheduleEventConfig?.eventDateSlotKey
+                ?: template?.scheduleEventConfig?.eventDateSlotKey
+                .orEmpty(),
+            scheduleEventDedupeKeyStrategy = rule?.scheduleEventConfig?.dedupeKeyStrategy
+                ?: template?.scheduleEventConfig?.dedupeKeyStrategy
+                .orEmpty(),
             slots = if (baseSlots.isEmpty()) {
                 listOf(
                     newRuleSlotDraft(RuleSlotDirection.INPUT),
@@ -794,9 +955,10 @@ class AttributeManagementViewModel(
             },
             systemVariableOptions = availableSystemVariableOptions(),
             expression = rule?.expression ?: template?.defaultExpression.orEmpty(),
+            canvasDefinition = rule?.canvasDefinition ?: template?.canvasDefinition,
             title = when {
                 rule != null -> "编辑规则"
-                template != null -> "从模板创建规则"
+                template != null -> "新建规则"
                 else -> "新建规则"
             },
             saveButtonText = if (rule != null) "保存修改" else "保存规则",
@@ -926,9 +1088,12 @@ class AttributeManagementViewModel(
             key = template?.key.orEmpty(),
             name = template?.name.orEmpty(),
             computationType = template?.computationType ?: RuleComputationType.CUSTOM,
-            triggerModes = template?.triggerModes ?: listOf(RuleTriggerMode.ON_VALUE_CHANGED),
+            triggerModes = template?.triggerModes ?: listOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE),
             activationMode = template?.activationMode ?: RuleActivationMode.ALWAYS_ON,
             toggleUiConfig = template?.toggleUiConfig,
+            scheduleConfig = template?.scheduleConfig,
+            scheduleEventConfig = template?.scheduleEventConfig,
+            canvasDefinition = template?.canvasDefinition,
             slots = template?.slots ?: emptyList(),
             expressionDefinition = template?.defaultExpressionDefinition,
             outputStrategies = template?.outputStrategies ?: emptyList(),
@@ -1525,6 +1690,140 @@ class AttributeManagementViewModel(
             .ifBlank { "无触发" }
     }
 
+    private fun buildRuleActivationSummary(rule: RuleDefinition): String {
+        return when (rule.activationMode) {
+            RuleActivationMode.ALWAYS_ON -> "默认启用，不向用户暴露开关"
+            RuleActivationMode.USER_TOGGLE -> {
+                val enabled = rule.toggleUiConfig?.labelWhenEnabled.orEmpty().ifBlank { "启用" }
+                val disabled = rule.toggleUiConfig?.labelWhenDisabled.orEmpty().ifBlank { "停用" }
+                "用户可开关（$enabled / $disabled）"
+            }
+        }
+    }
+
+    private fun buildRuleScheduleSummary(rule: RuleDefinition): String? {
+        if (RuleTriggerMode.SCHEDULED !in resolveEffectiveRuleTriggerModes(rule)) {
+            return null
+        }
+        val config = rule.scheduleConfig ?: return "已启用周期调度"
+        return when (config.resolveSourceMode()) {
+            RuleScheduleSourceMode.MANUAL_CALENDAR_RULE -> {
+                buildManualScheduleSummary(config.manualRule, config.fixedValue)
+            }
+            RuleScheduleSourceMode.SLOT_DRIVEN -> {
+                "来自槽位：${config.allReferencedSlotKeys().joinToString(" / ").ifBlank { "未选择" }}"
+            }
+        }
+    }
+
+    private fun buildRuleScheduleEventSummary(rule: RuleDefinition): String? {
+        val config = rule.scheduleEventConfig ?: return null
+        if (config.eventTitleTemplate.isBlank() && config.eventDateSlotKey.isNullOrBlank()) {
+            return null
+        }
+        return buildString {
+            append("生成日历事件")
+            if (config.eventTitleTemplate.isNotBlank()) {
+                append(" · 标题：")
+                append(config.eventTitleTemplate)
+            }
+            config.eventDateSlotKey?.takeIf { it.isNotBlank() }?.let { slotKey ->
+                append(" · 日期槽位：")
+                append(slotKey)
+            }
+        }
+    }
+
+    private fun collectScheduleReferencedSlotKeys(draft: RuleEditorDraftUiModel): List<String> {
+        val slotDriven = draft.slotDrivenScheduleConfig
+        val slotDrivenKeys = listOfNotNull(
+            slotDriven?.startAtSlotKey,
+            slotDriven?.frequencySlotKey,
+            slotDriven?.intervalSlotKey,
+            slotDriven?.weekdaysSlotKey,
+            slotDriven?.dayOfMonthSlotKey,
+            slotDriven?.monthlyWeekOrdinalSlotKey,
+            slotDriven?.monthlyWeekdaySlotKey,
+            slotDriven?.endAtSlotKey,
+            slotDriven?.occurrenceCountSlotKey,
+            slotDriven?.timezoneSlotKey,
+        )
+        return (draft.scheduleSlotKeys + slotDrivenKeys)
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
+    private fun resolveEffectiveScheduleSourceMode(draft: RuleEditorDraftUiModel): RuleScheduleSourceMode {
+        return when {
+            draft.slotDrivenScheduleConfig != null -> RuleScheduleSourceMode.SLOT_DRIVEN
+            draft.scheduleTimeSourceType == RuleScheduleTimeSourceType.SLOT -> RuleScheduleSourceMode.SLOT_DRIVEN
+            else -> draft.scheduleSourceMode
+        }
+    }
+
+    private fun buildLegacySlotDrivenScheduleConfig(draft: RuleEditorDraftUiModel): RuleSlotDrivenScheduleConfig? {
+        val slotKeys = draft.scheduleSlotKeys.filter { it.isNotBlank() }
+        if (slotKeys.isEmpty()) {
+            return null
+        }
+        return RuleSlotDrivenScheduleConfig(
+            frequencySlotKey = slotKeys.getOrNull(0),
+            dayOfMonthSlotKey = slotKeys.getOrNull(1),
+        )
+    }
+
+    private fun buildManualScheduleSummary(
+        rule: RuleManualScheduleRule?,
+        legacyFixedValue: String?,
+    ): String {
+        if (rule == null) {
+            return "手动日历规则：${legacyFixedValue.orEmpty().ifBlank { "未填写" }}"
+        }
+        val frequencyLabel = when (rule.frequency) {
+            RuleScheduleFrequency.DAILY -> "每日"
+            RuleScheduleFrequency.WEEKLY -> "每周"
+            RuleScheduleFrequency.MONTHLY -> "每月"
+            RuleScheduleFrequency.YEARLY -> "每年"
+            RuleScheduleFrequency.CUSTOM -> "自定义"
+        }
+        val intervalLabel = if (rule.interval > 1) " 每 ${rule.interval} 次" else ""
+        val endLabel = when (rule.endType) {
+            RuleScheduleEndType.NEVER -> "，永不结束"
+            RuleScheduleEndType.UNTIL_DATE -> "，截止到指定日期"
+            RuleScheduleEndType.OCCURRENCE_COUNT -> "，共 ${rule.occurrenceCount ?: 0} 次"
+        }
+        val monthlyLabel = when (rule.monthlyPatternType) {
+            RuleScheduleMonthlyPatternType.DAY_OF_MONTH -> {
+                rule.dayOfMonth?.let { "，每月 $it 日" }.orEmpty()
+            }
+            RuleScheduleMonthlyPatternType.NTH_WEEKDAY -> {
+                val weekday = rule.monthlyWeekday?.let(::ruleScheduleWeekdayLabel).orEmpty()
+                val ordinal = rule.monthlyWeekOrdinal?.toString().orEmpty()
+                if (weekday.isBlank() || ordinal.isBlank()) "" else "，每月第 $ordinal 个$weekday"
+            }
+            null -> ""
+        }
+        return "手动日历规则：$frequencyLabel$intervalLabel$monthlyLabel$endLabel"
+    }
+
+    private fun ruleScheduleWeekdayLabel(weekday: RuleScheduleWeekday): String = when (weekday) {
+        RuleScheduleWeekday.MONDAY -> "周一"
+        RuleScheduleWeekday.TUESDAY -> "周二"
+        RuleScheduleWeekday.WEDNESDAY -> "周三"
+        RuleScheduleWeekday.THURSDAY -> "周四"
+        RuleScheduleWeekday.FRIDAY -> "周五"
+        RuleScheduleWeekday.SATURDAY -> "周六"
+        RuleScheduleWeekday.SUNDAY -> "周日"
+    }
+
+    private fun buildRuleTriggerModesFromDraft(draft: RuleEditorDraftUiModel): List<RuleTriggerMode> {
+        val baseModes = mutableListOf(RuleTriggerMode.ON_VALUE_CHANGED, RuleTriggerMode.ON_SAVE)
+        if (draft.isScheduledEnabled) {
+            baseModes += RuleTriggerMode.SCHEDULED
+        }
+        return baseModes
+    }
+
     private fun buildRuleSlotCountSummary(rule: RuleDefinition): String {
         return "输入 ${rule.inputSlots().size} · 输出 ${rule.outputSlots().size}"
     }
@@ -1664,7 +1963,10 @@ class AttributeManagementViewModel(
                 countText = "派生属性：${currentAttributes.count { it.templateId == template.id }} 个",
                 usageHint = "适合快速创建标准字段",
                 defaultRuleBindings = template.defaultRuleBindings.map { binding -> binding.ruleId },
+                activationSummary = "",
                 triggerModes = emptyList(),
+                scheduleSummary = null,
+                scheduleEventSummary = null,
                 inputSlots = emptyList(),
                 outputSlots = emptyList(),
                 outputStrategies = emptyList(),
@@ -1693,7 +1995,10 @@ class AttributeManagementViewModel(
                 countText = "规则定义：${currentRules.count { it.key == template.key || it.id == template.key }} 个",
                 usageHint = template.description.orEmpty(),
                 defaultRuleBindings = emptyList(),
+                activationSummary = buildRuleActivationSummary(templateRule),
                 triggerModes = template.triggerModes.map(::ruleTriggerModeLabel),
+                scheduleSummary = buildRuleScheduleSummary(templateRule),
+                scheduleEventSummary = buildRuleScheduleEventSummary(templateRule),
                 inputSlots = templateRule.inputSlots().map(::toRuleSlotSummaryUiModel),
                 outputSlots = templateRule.outputSlots().map(::toRuleSlotSummaryUiModel),
                 outputStrategies = resolveEffectiveRuleOutputTargets(templateRule).map { output ->
@@ -1775,6 +2080,7 @@ class AttributeManagementViewModel(
             icon = "rule",
             ruleType = mapRuleType(rule.computationType),
             source = if (isSystemBuiltIn) RuleSourceFilter.SYSTEM else RuleSourceFilter.CUSTOM,
+            activationSummary = buildRuleActivationSummary(rule),
             triggerSummary = buildRuleTriggerSummary(rule),
             slotCountSummary = buildRuleSlotCountSummary(rule),
             inputSummary = summarizeRuleSlots(rule.inputSlots()),
@@ -1783,6 +2089,8 @@ class AttributeManagementViewModel(
                 append(summarizeRuleSlots(rule.inputSlots()))
                 append(" ")
                 append(summarizeRuleSlots(rule.outputSlots()))
+                append(" ")
+                append(buildRuleActivationSummary(rule))
                 append(" ")
                 append(buildRuleTriggerSummary(rule))
             },
@@ -1850,7 +2158,10 @@ class AttributeManagementViewModel(
             icon = "rule",
             sourceLabel = if (isSystemBuiltIn) "系统规则" else "自定义规则",
             ruleType = mapRuleType(rule.computationType).displayName,
+            activationSummary = buildRuleActivationSummary(rule),
             triggerModes = resolveEffectiveRuleTriggerModes(rule).map(::ruleTriggerModeLabel),
+            scheduleSummary = buildRuleScheduleSummary(rule),
+            scheduleEventSummary = buildRuleScheduleEventSummary(rule),
             inputSlots = rule.inputSlots().map(::toRuleSlotSummaryUiModel),
             outputSlots = rule.outputSlots().map(::toRuleSlotSummaryUiModel),
             outputStrategies = resolveEffectiveRuleOutputTargets(rule).map { output ->
@@ -2468,6 +2779,7 @@ class AttributeManagementViewModel(
         RuleTriggerMode.ON_FORM_OPENED -> "表单打开时"
         RuleTriggerMode.ON_SAVE -> "保存物品时"
         RuleTriggerMode.ON_SYSTEM_INPUT_CHANGED -> "系统输入变化时"
+        RuleTriggerMode.SCHEDULED -> "周期调度"
     }
 
     private fun ruleSlotDirectionLabel(direction: RuleSlotDirection): String = when (direction) {
@@ -2532,6 +2844,22 @@ class AttributeManagementViewModel(
             .trim('_')
             .ifBlank { "attr" }
         return "${normalized}_${System.currentTimeMillis()}"
+    }
+
+    private fun buildDuplicatedAttributeName(baseName: String): String {
+        val rawBase = baseName.trim().ifBlank { "未命名属性" }
+        val firstCandidate = "$rawBase 副本"
+        if (currentAttributes.none { it.name.equals(firstCandidate, ignoreCase = true) }) {
+            return firstCandidate
+        }
+        var index = 2
+        while (true) {
+            val candidate = "$rawBase 副本 $index"
+            if (currentAttributes.none { it.name.equals(candidate, ignoreCase = true) }) {
+                return candidate
+            }
+            index += 1
+        }
     }
 
     private fun buildRuleKey(name: String): String {
@@ -2652,6 +2980,7 @@ private data class RuleCatalogEntry(
     val icon: String,
     val ruleType: RuleTypeFilter,
     val source: RuleSourceFilter,
+    val activationSummary: String,
     val triggerSummary: String,
     val slotCountSummary: String,
     val inputSummary: String,
@@ -2668,6 +2997,7 @@ private data class RuleCatalogEntry(
         val searchMatches = search.isBlank() ||
             name.contains(search, ignoreCase = true) ||
             ruleType.displayName.contains(search, ignoreCase = true) ||
+            activationSummary.contains(search, ignoreCase = true) ||
             triggerSummary.contains(search, ignoreCase = true) ||
             slotCountSummary.contains(search, ignoreCase = true) ||
             inputSummary.contains(search, ignoreCase = true) ||
@@ -2692,6 +3022,7 @@ private data class RuleCatalogEntry(
             name = name,
             icon = icon,
             ruleTypeLabel = ruleType.displayName,
+            activationSummary = activationSummary,
             triggerSummary = triggerSummary,
             slotCountSummary = slotCountSummary,
             inputSummary = inputSummary,
@@ -2722,7 +3053,10 @@ private data class TemplateCatalogEntry(
     val countText: String,
     val usageHint: String,
     val defaultRuleBindings: List<String>,
+    val activationSummary: String,
     val triggerModes: List<String>,
+    val scheduleSummary: String?,
+    val scheduleEventSummary: String?,
     val inputSlots: List<RuleSlotSummaryUiModel>,
     val outputSlots: List<RuleSlotSummaryUiModel>,
     val outputStrategies: List<RuleOutputStrategySummaryUiModel>,
@@ -2805,7 +3139,10 @@ private data class TemplateCatalogEntry(
                 icon = icon,
                 isSystemBuiltIn = isSystemBuiltIn,
                 ruleType = ruleType.displayName,
+                activationSummary = activationSummary,
                 triggerModes = triggerModes,
+                scheduleSummary = scheduleSummary,
+                scheduleEventSummary = scheduleEventSummary,
                 inputSlots = inputSlots,
                 outputSlots = outputSlots,
                 outputStrategies = outputStrategies,

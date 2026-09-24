@@ -153,6 +153,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_profile,
                 R.id.nav_category,
                 R.id.nav_attribute,
+                R.id.nav_rule_management,
                 R.id.nav_settings
             )
         )
@@ -178,6 +179,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_profile,
                 R.id.nav_category,
                 R.id.nav_attribute,
+                R.id.nav_rule_management,
                 R.id.categoryPickerFragment,
                 R.id.navigation_function -> {
                     hideTopBar()
@@ -280,6 +282,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.editItemFragment,
                 R.id.nav_category,
                 R.id.nav_attribute,
+                R.id.nav_rule_management,
                 R.id.categoryPickerFragment,
                 R.id.navigation_item_detail,
                 R.id.navigation_map_picker,
@@ -313,6 +316,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_profile,
                 R.id.nav_category,
                 R.id.nav_attribute,
+                R.id.nav_rule_management,
                 R.id.categoryPickerFragment -> {
                     hideTopBar()
                 }
@@ -375,7 +379,8 @@ class MainActivity : AppCompatActivity() {
             R.id.navigation_donation,
             R.id.navigation_about_app,
             R.id.nav_category,
-            R.id.nav_attribute -> R.id.navigation_profile
+            R.id.nav_attribute,
+            R.id.nav_rule_management -> R.id.navigation_profile
 
             else -> currentNavSelection
         }

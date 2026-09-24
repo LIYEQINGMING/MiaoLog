@@ -4,8 +4,8 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -15,7 +15,7 @@ import androidx.navigation.fragment.findNavController
 import com.example.itemmanagement.ItemManagementApplication
 import com.example.itemmanagement.ui.attribute.model.AttributeManagementEntryMode
 
-class AttributeFragment : Fragment() {
+class RuleManagementFragment : Fragment() {
 
     private val viewModel: AttributeManagementViewModel by viewModels {
         AttributeManagementViewModelFactory(
@@ -33,7 +33,7 @@ class AttributeFragment : Fragment() {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 LaunchedEffect(Unit) {
-                    viewModel.initializeEntryMode(AttributeManagementEntryMode.ATTRIBUTES)
+                    viewModel.initializeEntryMode(AttributeManagementEntryMode.RULES)
                 }
                 val uiState by viewModel.uiState.collectAsState()
                 AttributeManagementScreen(
